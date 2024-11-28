@@ -73,15 +73,15 @@ void decode_cmdline(int argc, char *argv[]) {
     // Elaborazione degli argomenti
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
-            strlcpy(theKeyToSearch, argv[i + 1], 254); 
+            strncpy(theKeyToSearch, argv[i + 1], 254); 
             i++; // Salta l'argomento dell'IP
         }
         else if (strcmp(argv[i], "-k") == 0 && i + 1 < argc) {
-            strlcpy(theMessage, argv[i + 1], 25); 
+            strncpy(theMessage, argv[i + 1], 25); 
             i++; // Salta l'argomento dell'IP
         }
         else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
-            strlcpy(theSubNet, argv[i + 1], 49); 
+            strncpy(theSubNet, argv[i + 1], 49); 
             i++; // Salta l'argomento dell'IP
         }
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
@@ -211,7 +211,7 @@ int send_udp_request(const char *ip_address) {
     buffer[recv_len] = '\0';
     if(isVerbose) printf("Risposta da %s: %s\n", ip_address, buffer);
     close(sockfd);
-    strlcpy(theResponse, buffer, 254);
+    strncpy(theResponse, buffer, 254);
     return 1;  // Risposta ricevuta
 }
 
