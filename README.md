@@ -60,7 +60,8 @@ Only basic C POSIX functionalities: portability, lightness, semplicity.
 
 ### History
 
-28/11/2024 - First release v.1.0
+28/11/2024 - First release v.1.1
+28/11/2024 - Add the MAC address reference v.1.1
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

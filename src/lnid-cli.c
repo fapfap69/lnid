@@ -11,7 +11,7 @@
  Licenza completa: https://creativecommons.org/licenses/by/4.0/
  
  auth. A.Franco - INFN Bary Italy
- date: 28/11/2024       ver.1.0
+ date: 28/11/2024       ver.1.1
 
  ---------------------------------------------------------
   HISTORY 
@@ -48,7 +48,8 @@ void print_usage() {
     printf("  -i <indirizzo_ip> : specifica l'indirizzo IP del server\n");
     printf("  -p <porta>        : specifica la porta da utilizzare (default=16969)\n");
     printf("  -d                : ritorna il PID\n");
-    printf("  -v                : attiva la modalità verbose\n");
+    printf("  -m                : ritorna il MAC addr\n");
+    printf("  -v               : attiva la modalità verbose\n");
     printf("  -h                : visualizza l'help\n");
     return;
 }
@@ -77,6 +78,9 @@ void decode_cmdline(int argc, char *argv[]) {
         }
         else if (strcmp(argv[i], "-d") == 0) {
             strcpy(theMessage,"ID");
+        }
+        else if (strcmp(argv[i], "-m") == 0) {
+            strcpy(theMessage,"MAC");
         }
         else if (strcmp(argv[i], "-h") == 0) {
             print_usage();

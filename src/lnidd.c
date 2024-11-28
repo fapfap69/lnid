@@ -11,7 +11,7 @@
  Licenza completa: https://creativecommons.org/licenses/by/4.0/
  
  auth. A.Franco - INFN Bary Italy
- date: 28/11/2024       ver.1.0
+ date: 28/11/2024       ver.1.1
 
  ---------------------------------------------------------
   HISTORY 
@@ -27,22 +27,38 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/ioctl.h>
 #include <netdb.h>
 #include <errno.h>
+
+
+#ifdef __linux__
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <sys/socket.h>
+#elif defined(__APPLE__)
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <net/ethernet.h>  // Necessario per LLADDR
+#include <net/if_dl.h>
+#endif
 
 #define DEFAULT_PORT 16969 // Porta su cui ascoltare
 #define BUFFER_SIZE 1024
 
 // Variabili Globali
 int theListeningPort = DEFAULT_PORT;
+char theEthernetMAC[50] = "eth0";
 int isVerbose = 0;
 
 // Funzione per stampare l'uso del programma
 void print_usage() {
     printf("***  Local Network Identity Discovery Server  ***\n");
     printf(" Auth: A.Franco - INFN Bari Italy \n");
-    printf(" Date : 28/11/2024 -  Ver. 1.0    \n\n");
-    printf("Utilizzo: lnidd -p <porta> -v -h\n");
+    printf(" Date : 28/11/2024 -  Ver. 1.1    \n\n");
+    printf("Utilizzo: lnidd -e <ethernet> -p <porta> -v -h\n");
+    printf("  -e <ethernet>     : specifica la scheda ethernet da utilizzare  (default=eth0)\n");
     printf("  -p <porta>        : specifica la porta da utilizzare  (default=16969)\n");
     printf("  -v                : attiva la modalità verbose\n");
     printf("  -h                : visualizza l'help\n");
@@ -56,6 +72,10 @@ void decode_cmdline(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
             theListeningPort = atoi(argv[i + 1]);
+            i++; // Salta l'argomento della porta
+        }
+        else if (strcmp(argv[i], "-e") == 0 && i + 1 < argc) {
+            strncpy(theEthernetMAC, argv[i + 1], 49);
             i++; // Salta l'argomento della porta
         }
         else if (strcmp(argv[i], "-v") == 0) {
@@ -81,6 +101,7 @@ void decode_cmdline(int argc, char *argv[]) {
     // Stampa delle informazioni di configurazione
     if(isVerbose) {
         printf("Configurazione:\n");
+        printf("  Ethernet: %s\n", theEthernetMAC);
         printf("  Porta: %d\n", theListeningPort);
         printf("  Modalità verbose attivata\n");
     }
@@ -102,6 +123,85 @@ char* get_hostname() {
 char* get_unique_id() {
     static char id[256];
     snprintf(id, sizeof(id), "ID-%d", getpid()); // Utilizza il PID come ID
+    return id;
+}
+
+// Funzione per ottenere il MAC address da usare come ID
+char *get_macaddr_id() {
+    static char id[256];
+    unsigned char *mac = NULL;
+
+#ifdef __linux__
+    int sock;
+    struct ifreq ifr;
+
+    // Crea un socket di tipo AF_INET
+    sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sock == -1) {
+        perror("Errore durante la creazione del socket");
+        exit(EXIT_FAILURE);
+    }
+
+    // Copia il nome dell'interfaccia nella struttura ifreq
+    strncpy(ifr.ifr_name, theEthernetMAC, IFNAMSIZ - 1);
+
+    // Usa ioctl per ottenere il MAC address
+    if (ioctl(sock, SIOCGIFHWADDR, &ifr) == -1) {
+        perror("Errore durante l'ottenimento del MAC address");
+        close(sock);
+        exit(EXIT_FAILURE);
+    }
+
+    // Estrae il MAC address dalla struttura ifreq
+    mac = (unsigned char *)ifr.ifr_hwaddr.sa_data;
+
+    // Stampa il MAC address in formato esadecimale
+    if(isVerbose) printf("MAC address di %s: %02x:%02x:%02x:%02x:%02x:%02x\n",
+           ifr.ifr_name,
+           mac[0], mac[1], mac[2],
+           mac[3], mac[4], mac[5]);
+
+    close(sock);
+
+#elif defined(__APPLE__)
+    struct ifaddrs *ifaddr, *ifa;
+    
+    // Ottieni tutte le informazioni sulle interfacce di rete
+    if (getifaddrs(&ifaddr) == -1) {
+        perror("getifaddrs");
+        exit(EXIT_FAILURE);
+    }
+
+    // Scorri le interfacce
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        // Controlla se l'interfaccia corrisponde a quella richiesta
+        if (ifa->ifa_addr == NULL) {
+            continue;
+        }
+
+        // Verifica se l'interfaccia è di tipo AF_LINK (incluso il MAC address)
+        if (ifa->ifa_addr->sa_family == AF_LINK && strcmp(ifa->ifa_name, theEthernetMAC) == 0) {
+            struct sockaddr_dl *sdl = (struct sockaddr_dl *) ifa->ifa_addr;
+            mac = (unsigned char *)sdl->sdl_data + 6;  // I primi 6 byte sono l'indirizzo MAC
+
+            // Stampa l'indirizzo MAC in formato esadecimale
+            printf("MAC address di %s: %02x:%02x:%02x:%02x:%02x:%02x\n",
+                   ifa->ifa_name,
+                   mac[0], mac[1], mac[2],
+                   mac[3], mac[4], mac[5]);
+            break;
+        }
+    }
+    freeifaddrs(ifaddr);
+#else
+    fprintf(stderr, "Questo programma non è supportato su questo sistema operativo.\n");
+    exit(EXIT_FAILURE);
+#endif
+    if(mac == NULL) {
+        snprintf(id, sizeof(id), "00:00:00:00:00:00");    
+    } else {
+        snprintf(id, sizeof(id), "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);    
+    }
     return id;
 }
 
@@ -151,6 +251,8 @@ int main(int argc, char *argv[]) {
         char* response = NULL;
         if (strcmp(buffer, "ID") == 0) {
             response = get_unique_id();
+        } else if (strcmp(buffer, "MAC") == 0) {
+            response = get_macaddr_id();
         } else if (strcmp(buffer, "HOSTNAME") == 0) {
             response = get_hostname();
         } else {

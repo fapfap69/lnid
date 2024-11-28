@@ -11,7 +11,7 @@
  Licenza completa: https://creativecommons.org/licenses/by/4.0/
  
  auth. A.Franco - INFN Bary Italy
- date: 28/11/2024       ver.1.0
+ date: 28/11/2024       ver.1.1
 
  ---------------------------------------------------------
   HISTORY 
@@ -38,19 +38,20 @@ int isVerbose = 0;
 int theDelay = 20; // milliseconds
 char theSubNet[50] = "192.168.0.0";
 char theNetMask[50] = "255.255.255.0";
-char theMessage[25] = "HOSTNAME";
+char theMessage[25] = "MAC";
 char theResponse[255];
 time_t theTimeOutSec = TIMEOUT_SEC;
 useconds_t theTimeOutUSec = TIMEOUT_USEC;
-char theHostToSearch[255] = "pippo.cern.ch";
+char theKeyToSearch[255] = "pippo.cern.ch";
 
 // Funzione per stampare l'uso del programma
 void print_usage() {
     printf("***  Local Network Identity Discovery Search  ***\n");
     printf(" Auth: A.Franco - INFN Bari Italy \n");
-    printf(" Date : 28/11/2024 -  Ver. 1.0    \n\n");
+    printf(" Date : 28/11/2024 -  Ver. 1.1    \n\n");
     printf("Utilizzo: lnid-search -n <nome_host> -s <indirizzo_subnet> -p <porta>  -t <milliseconds> -o <milliseconds> -v -h\n");
-    printf("  -n <nome_host>    : l'host da cercare\n");
+    printf("  -n <search_id>    : l'id da cercare\n");
+    printf("  -k <key>          : la chiave = ID, MAC, HOSTNAME");
     printf("  -s <indirizzo_subnet> : specifica la subnet\n");
     printf("  -p <porta>        : specifica la porta da utilizzare (default=16969)\n");
     printf("  -t <milliseconds> : ritardo fra scansioni successive (default=20\n");
@@ -72,7 +73,11 @@ void decode_cmdline(int argc, char *argv[]) {
     // Elaborazione degli argomenti
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
-            strlcpy(theHostToSearch, argv[i + 1], 254); 
+            strlcpy(theKeyToSearch, argv[i + 1], 254); 
+            i++; // Salta l'argomento dell'IP
+        }
+        else if (strcmp(argv[i], "-k") == 0 && i + 1 < argc) {
+            strlcpy(theMessage, argv[i + 1], 25); 
             i++; // Salta l'argomento dell'IP
         }
         else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
@@ -108,7 +113,7 @@ void decode_cmdline(int argc, char *argv[]) {
     }
 
     // Verifica se sono stati forniti i parametri necessari
-    if (*theSubNet == '\0' || theListeningPort == 0 || *theHostToSearch == '\0') {
+    if (*theSubNet == '\0' || theListeningPort == 0 || *theKeyToSearch == '\0') {
         printf("Errore: Host name, SubNet o porta errata.\n");
         exit(EXIT_FAILURE); // Error exit code
     }
@@ -142,7 +147,7 @@ void decode_cmdline(int argc, char *argv[]) {
     // Stampa delle informazioni di configurazione
     if(isVerbose) {
         printf("Configurazione:\n");
-        printf("  Host Name: %s\n", theHostToSearch);
+        printf("  Host Name: %s\n", theKeyToSearch);
         printf("  Subnet: %s\n", theSubNet);
         printf("  Mask: %s\n", theNetMask);
         printf("  Porta: %d\n", theListeningPort);
@@ -232,7 +237,7 @@ void scan_subnet(const char *subnet, const char *mask) {
 
         // Invia la richiesta UDP a questo IP
         if(send_udp_request(ip_string) == 1) { // ok
-            if(strcmp(theResponse, theHostToSearch) == 0) {
+            if(strcmp(theResponse, theKeyToSearch) == 0) {
                 printf("%s",ip_string);
                 return;
             }
