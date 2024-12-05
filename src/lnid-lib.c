@@ -64,23 +64,21 @@ void dump_sockaddr_in(const struct sockaddr_in *addr) {
         printf("La struttura sockaddr_in è NULL.\n");
         return;
     }
-
     // Converti l'indirizzo IP da network byte order a una stringa leggibile
     char ip_str[INET_ADDRSTRLEN]; // Buffer per l'indirizzo IP
     if (inet_ntop(AF_INET, &(addr->sin_addr), ip_str, sizeof(ip_str)) == NULL) {
         perror("Errore nella conversione dell'indirizzo IP");
         return;
     }
-
     // Estrai e converte il numero di porta da network byte order
     unsigned short port = ntohs(addr->sin_port);
-
     // Stampa le informazioni
-    printf("indirizzo in memoria %lu\n", addr);
+    printf("indirizzo variabile in memoria %lu\n", (unsigned long)addr);
     printf("sockaddr_in:\n");
     printf("  Indirizzo IP: %s\n", ip_str);
     printf("  Porta: %u\n", port);
     printf("  Famiglia: %s\n", addr->sin_family == AF_INET ? "AF_INET" : "Sconosciuta");
+    return;
 }
 
 // Funzione per ottenere l'hostname
@@ -299,7 +297,7 @@ int rxData(int sockfd, char *buffer, size_t *recv_len,
             OPENSSL_free(decr);
         }
     }
-    if(isVerbose) fprintf(stdout,"rxData() :Ricevuti bytes %lu = [%.8s...]\n", *recv_len , buffer);
+    if(isVerbose) fprintf(stdout,"rxData() :Ricevuti bytes %lu da %s = [%.8s...]\n", *recv_len , ip_address, buffer);
     return(TRUE);
 }   
 
@@ -308,7 +306,7 @@ int rxData(int sockfd, char *buffer, size_t *recv_len,
 int txData(int sockfd, char *buffer, size_t *txlen, 
                 char *ip_address, struct sockaddr_in *server_addr, 
                 EVP_PKEY *keypair) {
-printf(">>>3aa>>>  >%lu<\n\n", ip_address);              
+
     ssize_t sentLen = 0;
     if(keypair != NULL) { // bisogna crittografare 
         unsigned char *decr;
@@ -324,14 +322,12 @@ printf(">>>3aa>>>  >%lu<\n\n", ip_address);
             OPENSSL_free(decr);
         }
     }
-    size_t s = *txlen;
-    sentLen = sendto(sockfd, buffer, s, 0, (const struct sockaddr *)(server_addr), sizeof(*server_addr));
+    sentLen = sendto(sockfd, buffer, *txlen, 0, (const struct sockaddr *)(server_addr), sizeof(*server_addr));
     if(sentLen <= 0) {
         fprintf(stderr,"txData() : Errore di trasmissione %zd bytes in spedizione, 0 inviati!", sentLen);
     }
     *txlen = sentLen;
-    if(isVerbose) fprintf(stdout,"txData() : Trasmessi byte = %lu [%.20s...]\n", *txlen, buffer);
-printf(">>>3az>>>  >%lu<\n\n", ip_address);              
+    if(isVerbose) fprintf(stdout,"txData() : Trasmessi byte = %lu a %s [%.20s...]\n", *txlen, ip_address, buffer);
     return(TRUE);
 }
 
@@ -367,9 +363,8 @@ int clientKnock(int sockfd, char *pubPEMKey, size_t *keylen, char *theServerIp, 
         fprintf(stderr,"Errore di ricezione !\n");
         return(FALSE);
     }
-    //printf(">>> %lu %lu %lu \n\n", keypair,pubPEMKey); 
-    txlen = 3;
-    strcpy(buf,"Bye");
+    strcpy(buf,"Bye !");
+    txlen = strlen(buf);
     if(txData(sockfd, buf, &txlen, theServerIp, &server_addr, NULL) == FALSE) {
         fprintf(stderr,"Errore di trasmissione !\n");
         return(FALSE);

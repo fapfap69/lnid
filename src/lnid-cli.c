@@ -34,9 +34,8 @@
 extern int isVerbose;
 
 int theListeningPort = DEFAULT_PORT;
-char theSerIpBuf[500];
 char *theServerIp = NULL;
-char theMesBuf[500] = "HOSTNAME";
+char theMesBuf[BUFFER_SIZE] = "HOSTNAME";
 char *theMessage = theMesBuf;
 
 int isRSA = 0; // Is the comunication RSA
@@ -70,8 +69,7 @@ void decode_cmdline(int argc, char *argv[]) {
     // Elaborazione degli argomenti
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
-            strncpy(theSerIpBuf, argv[i+1], 25);
-            theServerIp = theSerIpBuf;
+            theServerIp = argv[i+1];
             i++; // Salta l'argomento dell'IP
         }
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
@@ -149,8 +147,7 @@ int main(int argc, char *argv[]) {
     size_t rxlen;
     
     creaIlSocket(&sockfd, &timeout, &server_addr, theListeningPort, theServerIp);
-    
-    dump_sockaddr_in(&server_addr);
+    // dump_sockaddr_in(&server_addr);
     if(isRSA == 0) {
         // Invio della richiesta
         if(isVerbose) fprintf(stdout,"Richesta del '%s' inviata a:%s:%d \n", theMessage, theServerIp, theListeningPort);
@@ -164,8 +161,6 @@ int main(int argc, char *argv[]) {
             exit(EXIT_FAILURE);
         }
     } else {
-    printf(">>>2>>%lu>  >%s<\n\n",theServerIp, theServerIp);
-
         char *passw = NULL;
         rxlen = readAllFile(PUBKEYFILEC, buffer); // inviata la publik key     
         if(txData(sockfd, buffer, &rxlen, theServerIp, &server_addr, NULL) == FALSE) { // chiave pubblica
@@ -183,35 +178,25 @@ int main(int argc, char *argv[]) {
             return(FALSE);
         }
         if(isVerbose) fprintf(stdout,"Chiave  pubblica ricevuta da:%s \n", theServerIp);
-    printf(">>>3>>%lu>  >%s<   %s\n\n",theServerIp, theServerIp, theMessage);
-
         size_t txlen = strlen(theMessage);
-printf(">>>3a>>>  >%lu<\n\n", theServerIp);             
         if(txData(sockfd, theMessage, &txlen, theServerIp, &server_addr, keyServPub) == FALSE) {
             fprintf(stderr,"Errore di trasmissione !\n");
             return(FALSE);
         }
-        
-dump_sockaddr_in(&server_addr);        
-printf(">>>4>>>  >%lu<\n\n", theServerIp);        
         if(rxData(sockfd, buffer, &txlen, theServerIp, pairKey) == FALSE) {  // leggi la risposta 
             fprintf(stderr,"Errore di ricezione !\n");
             return(FALSE);
         }
-    
-        txlen = 3;
         char buf[10];
-        strcpy(buf,"Bye");
+        strcpy(buf,"Bye !");
+        txlen = strlen(buf);
         if(txData(sockfd, buf, &txlen, theServerIp, &server_addr, NULL) == FALSE) {
             fprintf(stderr,"Errore di trasmissione !\n");
             return(FALSE);
         }
-printf(">>>5>>>  >%lu<\n\n", theServerIp);   
-
     }
-//    fprintf(stdout,"Risposta dal server %s: %s\n", theServerIp, buffer);
+    fprintf(stdout,"Risposta dal server %s = >%s<\n", theServerIp, buffer);
     close(sockfd);
-printf(">>>X>>>  >%s<\n\n", theServerIp);
     exit(EXIT_SUCCESS);
 }
 
