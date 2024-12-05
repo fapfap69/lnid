@@ -230,7 +230,7 @@ static int doDecrypt(EVP_PKEY *privateKey,
     }
     // Decifra
     if(EVP_PKEY_decrypt(dec_ctx, buf, &buf_len, in, in_len) <= 0) {
-        erroAndExit("doDecrypt() : EVP_PKEY_decrypt failed");
+        errorAndExit("doDecrypt() : EVP_PKEY_decrypt failed");
     }
     *out_len = buf_len;
     *out = buf;

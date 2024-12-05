@@ -27,29 +27,32 @@
 #include <sys/socket.h>
 #include <errno.h>
 
-#define DEFAULT_PORT 16969
-#define BUFFER_SIZE 1024
-#define TIMEOUT_SEC 2  // Timeout in secondi
-#define TIMEOUT_USEC 0 // Timeout in microsecondi
+#include "lnid-lib.c"
+#include "lnid-ssl.c"
 
 // Variabili Globali
+extern int isVerbose;
+
 int theListeningPort = DEFAULT_PORT;
-int isVerbose = 0;
 char *theServerIp = NULL;
 char theMessage[25] = "HOSTNAME";
 
+int isRSA = 0; // Is the comunication RSA
+OSSL_LIB_CTX *osslLibCtx = NULL;
+
 // Funzione per stampare l'uso del programma
 void print_usage() {
-    printf("***  Local Network Identity Discovery Client  ***\n");
-    printf(" Auth: A.Franco - INFN Bari Italy \n");
-    printf(" Date : 28/11/2024 -  Ver. 0.1    \n\n");
-    printf("Utilizzo: lnid-cli -i <indirizzo_ip> -p <porta> -d -v -h\n");
-    printf("  -i <indirizzo_ip> : specifica l'indirizzo IP del server\n");
-    printf("  -p <porta>        : specifica la porta da utilizzare (default=16969)\n");
-    printf("  -d                : ritorna il PID\n");
-    printf("  -m                : ritorna il MAC addr\n");
-    printf("  -v               : attiva la modalità verbose\n");
-    printf("  -h                : visualizza l'help\n");
+    fprintf(stdout,"***  Local Network Identity Discovery Client  ***\n");
+    fprintf(stdout," Auth: A.Franco - INFN Bari Italy \n");
+    fprintf(stdout," Date : 28/11/2024 -  Ver. 0.1    \n\n");
+    fprintf(stdout,"Utilizzo: lnid-cli -i <indirizzo_ip> -p <porta> -d -v -h\n");
+    fprintf(stdout,"  -i <indirizzo_ip> : specifica l'indirizzo IP del server\n");
+    fprintf(stdout,"  -p <porta>        : specifica la porta da utilizzare (default=16969)\n");
+    fprintf(stdout,"  -d                : ritorna il PID\n");
+    fprintf(stdout,"  -m                : ritorna il MAC addr\n");
+    fprintf(stdout,"  -c                : attiva la modalità cifrata\n");
+    fprintf(stdout,"  -v                : attiva la modalità verbose\n");
+    fprintf(stdout,"  -h                : visualizza l'help\n");
     return;
 }
 
@@ -75,6 +78,9 @@ void decode_cmdline(int argc, char *argv[]) {
         else if (strcmp(argv[i], "-v") == 0) {
             isVerbose = 1;
         }
+        else if (strcmp(argv[i], "-c") == 0) {
+            isRSA = 1;
+        }
         else if (strcmp(argv[i], "-d") == 0) {
             strcpy(theMessage,"ID");
         }
@@ -86,7 +92,7 @@ void decode_cmdline(int argc, char *argv[]) {
             exit(EXIT_SUCCESS); // Error exit code
         }
         else {
-            printf("Opzione non valida: %s\n", argv[i]);
+            fprintf(stdout,"Opzione non valida: %s\n", argv[i]);
             print_usage();
             exit(EXIT_FAILURE); // Error exit code
         }
@@ -94,69 +100,118 @@ void decode_cmdline(int argc, char *argv[]) {
 
     // Verifica se sono stati forniti i parametri necessari
     if (theServerIp == NULL || theListeningPort == 0) {
-        printf("Errore: IP o porta errata.\n");
+        fprintf(stdout,"Errore: IP o porta errata.\n");
         exit(EXIT_FAILURE); // Error exit code
     }
 
     // Stampa delle informazioni di configurazione
     if(isVerbose) {
-        printf("Configurazione:\n");
-        printf("  Server: %s\n", theServerIp);
-        printf("  Porta: %d\n", theListeningPort);
-        printf("  Richiesta: %s\n", theMessage);
-        printf("  Modalità verbose attivata\n");
+        fprintf(stdout,"Configurazione:\n");
+        fprintf(stdout,"  Server: %s\n", theServerIp);
+        fprintf(stdout,"  Porta: %d\n", theListeningPort);
+        fprintf(stdout,"  Richiesta: %s\n", theMessage);
+        fprintf(stdout,"  Modalità cifrata %s\n", isRSA == 0 ? "disattivata" : "attivata" );
+        fprintf(stdout,"  Modalità verbose attivata\n");
     }
     return;
 } 
 
 int main(int argc, char *argv[]) {
-    int sockfd;
-    struct sockaddr_in server_addr;
-    struct timeval timeout;
-    char buffer[BUFFER_SIZE];
 
+    char buffer[BUFFER_SIZE];
+    EVP_PKEY *privateKey = NULL;
+    EVP_PKEY *publicKey = NULL;
+    EVP_PKEY *pairKey = NULL;
+    EVP_PKEY *keyServPub = NULL;
+    
     // legge la command line 
     decode_cmdline(argc, argv);
 
+    // Set up per la cifratura
+    if(isRSA) {
+        char *passphrase = NULL;
+        pairKey = generateRsaKeyPair(KEY_SIZE); // genera la coppia di chiavi
+        if(pairKey == NULL) { exit(EXIT_FAILURE); } 
+        //if(storeRSAKeyPair(pairKey, PUBKEYFILES, PRIVKEYFILES) == 0) { exit(EXIT_FAILURE); } // crea i due file PEM
+        storeKeyInPEM(pairKey, PUBKEYFILEC, EVP_PKEY_PUBLIC_KEY, passphrase);
+        storeKeyInPEM(pairKey, PRIVKEYFILEC, EVP_PKEY_KEYPAIR, passphrase);
+   //     publicKey = loadKeyFromPEM(osslLibCtx, PUBKEYFILEC, passphrase);
+   //     privateKey = loadKeyFromPEM(osslLibCtx, PRIVKEYFILEC, passphrase);
+   //     OSSL_LIB_CTX_free(osslLibCtx);
+    }
     // Creazione del socket UDP
-    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("socket");
-        exit(EXIT_FAILURE);
-    }
-    if(isVerbose) printf("Socket creato ...\n");
+    int sockfd;
+    struct sockaddr_in server_addr;
+    struct timeval timeout;
+    size_t rxlen;
 
-    // Imposta il timeout per il socket
-    timeout.tv_sec = TIMEOUT_SEC;
-    timeout.tv_usec = TIMEOUT_USEC;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        perror("Errore nell'impostazione del timeout");
-        close(sockfd);
-        exit(EXIT_FAILURE);
-    }
-
-    // Inizializzazione dell'indirizzo del server
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(theListeningPort);
-    server_addr.sin_addr.s_addr = inet_addr(theServerIp);
-
-    // Invio della richiesta
-    sendto(sockfd, theMessage, strlen(theMessage), 0, (struct sockaddr*)&server_addr, sizeof(server_addr));
-    if(isVerbose) printf("Richesta del '%s' inviata a:%s:%d \n", theMessage, theServerIp, theListeningPort);
-
-    // Ricezione della risposta
-    ssize_t recv_len = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, NULL, NULL);
-    if (recv_len < 0) {
-        if (errno == EWOULDBLOCK || errno == EAGAIN) {
-            if(isVerbose) printf("Timeout raggiunto per %s\n", theServerIp);
-        } else {
-            perror("Errore durante la ricezione");
+    creaIlSocket(&sockfd, &timeout, &server_addr, theListeningPort, theServerIp);
+    
+    if(isRSA == 0) {
+        // Invio della richiesta
+        if(isVerbose) fprintf(stdout,"Richesta del '%s' inviata a:%s:%d \n", theMessage, theServerIp, theListeningPort);
+        rxlen = strlen(theMessage);
+        if( txData(sockfd, theMessage, &rxlen, theServerIp, server_addr, NULL) == FALSE) {
+            fprintf(stderr,"Errore di trasmissione !\n");
+            exit(EXIT_FAILURE);
         }
-        close(sockfd);
-        exit(EXIT_FAILURE);
+        if( rxData(sockfd, buffer, &rxlen, theServerIp, NULL) == FALSE) {
+            fprintf(stderr,"Errore di ricezione !\n");
+            exit(EXIT_FAILURE);
+        }
+    } else {
+        char *passw = NULL;
+        rxlen = readAllFile(PUBKEYFILEC, buffer); // inviata la publik key     
+        if(txData(sockfd, buffer, &rxlen, theServerIp, server_addr, NULL) == FALSE) { // chiave pubblica
+            fprintf(stderr,"Errore di trasmissione !\n");
+            return(FALSE);
+        }
+        if(isVerbose) fprintf(stdout,"Chiave pubblica inviata a:%s \n", theServerIp);
+        if(rxData(sockfd, buffer, &rxlen, theServerIp, NULL) == FALSE) { // server pub key ricevuta
+            return(FALSE);
+        }
+        if(writeAllFile("/tmp/pubserverkey.pem", buffer, rxlen) == FALSE) { exit(EXIT_FAILURE); }
+        keyServPub = loadKeyFromPEM(osslLibCtx, "/tmp/pubserverkey.pem", passw);
+        if(keyServPub == NULL) { 
+            fprintf(stderr,"Chiave pubblica non valida !\n");
+            return(FALSE);
+        }
+        if(isVerbose) fprintf(stdout,"Chiave  pubblica ricevuta da:%s \n", theServerIp);
+
+        size_t txlen = strlen((const char *)theMessage);
+printf("=== pubblica Server --\n");
+dumpKeyPair(keyServPub);
+
+        if(txData(sockfd, (char *)theMessage, &txlen, theServerIp, server_addr, keyServPub) == FALSE) {
+            fprintf(stderr,"Errore di trasmissione !\n");
+            return(FALSE);
+        }
+   //    privateKey = k;
+      //  printf(">>>===privKey Add===>> %lu\n\n",privateKey);         
+      //  dumpKeyPair(privateKey);
+printf("=== privata Client --\n");
+dumpKeyPair(pairKey);      
+        if(rxData(sockfd, buffer, &txlen, theServerIp, pairKey) == FALSE) {  // leggi la risposta 
+            fprintf(stderr,"Errore di ricezione !\n");
+            return(FALSE);
+        }
+        printf(">>>===privKey Add===>> %lu\n\n",pairKey);         
+        txlen = 3;
+        char buf[10];
+        strcpy(buf,"Bye");
+        if(txData(sockfd, buf, &txlen, theServerIp, server_addr, NULL) == FALSE) {
+            fprintf(stderr,"Errore di trasmissione !\n");
+            return(FALSE);
+        }
+/*
+        int ret = clientKnock(sockfd, buffer, &rxlen, theServerIp, 
+                                pk, libctx, server_addr, theMessage);
+
+        if(ret == FALSE) {
+            exit(EXIT_FAILURE);
+        }*/
     }
-    buffer[recv_len] = '\0';
-    printf("Risposta dal server %s: %s\n", theServerIp, buffer);
+    fprintf(stdout,"Risposta dal server %s: %s\n", theServerIp, buffer);
     close(sockfd);
     exit(EXIT_SUCCESS);
 }
