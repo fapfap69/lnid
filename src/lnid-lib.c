@@ -57,6 +57,32 @@ int isVerbose = 0;
 #define TRUE 1
 #define FALSE 0
 
+
+// Funzione per fare il dump di una sockaddr_in
+void dump_sockaddr_in(const struct sockaddr_in *addr) {
+    if (addr == NULL) {
+        printf("La struttura sockaddr_in è NULL.\n");
+        return;
+    }
+
+    // Converti l'indirizzo IP da network byte order a una stringa leggibile
+    char ip_str[INET_ADDRSTRLEN]; // Buffer per l'indirizzo IP
+    if (inet_ntop(AF_INET, &(addr->sin_addr), ip_str, sizeof(ip_str)) == NULL) {
+        perror("Errore nella conversione dell'indirizzo IP");
+        return;
+    }
+
+    // Estrai e converte il numero di porta da network byte order
+    unsigned short port = ntohs(addr->sin_port);
+
+    // Stampa le informazioni
+    printf("indirizzo in memoria %lu\n", addr);
+    printf("sockaddr_in:\n");
+    printf("  Indirizzo IP: %s\n", ip_str);
+    printf("  Porta: %u\n", port);
+    printf("  Famiglia: %s\n", addr->sin_family == AF_INET ? "AF_INET" : "Sconosciuta");
+}
+
 // Funzione per ottenere l'hostname
 char* get_hostname() {
     static char hostname[256];
@@ -280,9 +306,9 @@ int rxData(int sockfd, char *buffer, size_t *recv_len,
 // ---- INvio della risposta con eventuale criptatura
 //
 int txData(int sockfd, char *buffer, size_t *txlen, 
-                char *ip_address, struct sockaddr_in server_addr, 
+                char *ip_address, struct sockaddr_in *server_addr, 
                 EVP_PKEY *keypair) {
-
+printf(">>>3aa>>>  >%lu<\n\n", ip_address);              
     ssize_t sentLen = 0;
     if(keypair != NULL) { // bisogna crittografare 
         unsigned char *decr;
@@ -298,12 +324,14 @@ int txData(int sockfd, char *buffer, size_t *txlen,
             OPENSSL_free(decr);
         }
     }
-    sentLen = sendto(sockfd, buffer, *txlen, 0, (const struct sockaddr *)(&server_addr), sizeof(server_addr));
+    size_t s = *txlen;
+    sentLen = sendto(sockfd, buffer, s, 0, (const struct sockaddr *)(server_addr), sizeof(*server_addr));
     if(sentLen <= 0) {
         fprintf(stderr,"txData() : Errore di trasmissione %zd bytes in spedizione, 0 inviati!", sentLen);
     }
     *txlen = sentLen;
     if(isVerbose) fprintf(stdout,"txData() : Trasmessi byte = %lu [%.20s...]\n", *txlen, buffer);
+printf(">>>3az>>>  >%lu<\n\n", ip_address);              
     return(TRUE);
 }
 
@@ -314,7 +342,7 @@ int clientKnock(int sockfd, char *pubPEMKey, size_t *keylen, char *theServerIp, 
                 OSSL_LIB_CTX *libctx, struct sockaddr_in server_addr, char *theMessage) {
     char buf[10];
 
-    if(txData(sockfd, pubPEMKey, keylen, theServerIp, server_addr, NULL) == FALSE) { // chiave pubblica
+    if(txData(sockfd, pubPEMKey, keylen, theServerIp, &server_addr, NULL) == FALSE) { // chiave pubblica
         fprintf(stderr,"Errore di trasmissione !\n");
         return(FALSE);
     }
@@ -331,7 +359,7 @@ int clientKnock(int sockfd, char *pubPEMKey, size_t *keylen, char *theServerIp, 
     if(isVerbose) fprintf(stdout,"Chiave  pubblica ricevuta da:%s \n", theServerIp);
         
     size_t txlen = strlen((const char *)theMessage);
-    if(txData(sockfd, (char *)theMessage, &txlen, theServerIp, server_addr, keyServPub) == FALSE) {
+    if(txData(sockfd, (char *)theMessage, &txlen, theServerIp, &server_addr, keyServPub) == FALSE) {
         fprintf(stderr,"Errore di trasmissione !\n");
         return(FALSE);
     }
@@ -342,12 +370,13 @@ int clientKnock(int sockfd, char *pubPEMKey, size_t *keylen, char *theServerIp, 
     //printf(">>> %lu %lu %lu \n\n", keypair,pubPEMKey); 
     txlen = 3;
     strcpy(buf,"Bye");
-    if(txData(sockfd, buf, &txlen, theServerIp, server_addr, NULL) == FALSE) {
+    if(txData(sockfd, buf, &txlen, theServerIp, &server_addr, NULL) == FALSE) {
         fprintf(stderr,"Errore di trasmissione !\n");
         return(FALSE);
     }
     return(TRUE);
 }
+
 
 #endif
 // --------  EOF ---------
