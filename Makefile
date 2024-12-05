@@ -50,7 +50,7 @@ all: $(BUILD_DIR) $(TARGETS)
 # Regola per compilare ciascun programma
 $(BUILD_DIR)/%: $(SRC_DIR)/%.c
 	@echo "Compilazione di $< -> $@"
-	$(CC) $(CFLAGS) -o $@ $<
+	$(CC) $(CFLAGS) $(LDLIBS) -o $@ $<
 
 # Regola per creare la directory degli eseguibili
 $(BUILD_DIR):

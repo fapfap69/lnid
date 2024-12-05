@@ -235,7 +235,7 @@ static int doDecrypt(EVP_PKEY *privateKey,
     *out_len = buf_len;
     *out = buf;
     if(isVerbose) {
-        fprintf(stdout, "Decifrati %d bytes:\n",buf_len);
+        fprintf(stdout, "Decifrati %zu bytes:\n",buf_len);
         BIO_dump_indent_fp(stdout, buf, buf_len, 2);
         fprintf(stdout, "\n");
     }
@@ -276,15 +276,13 @@ static int doEncrypt(EVP_PKEY *publicKey,
     *out_len = buf_len;
     *out = buf;
     if(isVerbose) {
-        fprintf(stdout, "Cifrati %d bytes :\n",buf_len);
+        fprintf(stdout, "Cifrati %zu bytes :\n",buf_len);
         BIO_dump_indent_fp(stdout, buf, buf_len, 2);
         fprintf(stdout, "\n");
     }
     EVP_PKEY_CTX_free(enc_ctx);
     return(TRUE);
 }
-
-
 
 // ---- Libera la memoria allocata per le chiavi RSA
 //

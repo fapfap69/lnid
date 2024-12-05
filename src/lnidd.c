@@ -282,7 +282,7 @@ int main(int argc, char *argv[]) {
             }
             // Gestisci il messaggio : buffer In/out !
             handleClientMessage(&clients[idx], buffer, &bytes_received);
-printf(">>>>>> %lu\n\n",bytes_received);
+//printf(">>>>>> %lu\n\n",bytes_received);
             // Invia la risposta al client
             if(isVerbose) {
                 fprintf(stdout, "Risposta del server:\n");

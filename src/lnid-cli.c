@@ -35,7 +35,8 @@ extern int isVerbose;
 
 int theListeningPort = DEFAULT_PORT;
 char *theServerIp = NULL;
-char theMessage[25] = "HOSTNAME";
+char theMesBuf[50] = "HOSTNAME";
+char *theMessage = theMesBuf;
 
 int isRSA = 0; // Is the comunication RSA
 OSSL_LIB_CTX *osslLibCtx = NULL;
@@ -119,8 +120,8 @@ void decode_cmdline(int argc, char *argv[]) {
 int main(int argc, char *argv[]) {
 
     char buffer[BUFFER_SIZE];
-    EVP_PKEY *privateKey = NULL;
-    EVP_PKEY *publicKey = NULL;
+    //EVP_PKEY *privateKey = NULL;
+    //EVP_PKEY *publicKey = NULL;
     EVP_PKEY *pairKey = NULL;
     EVP_PKEY *keyServPub = NULL;
     
@@ -144,9 +145,9 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in server_addr;
     struct timeval timeout;
     size_t rxlen;
-
+    printf(">>>>>>  >%s<\n\n", theServerIp);
     creaIlSocket(&sockfd, &timeout, &server_addr, theListeningPort, theServerIp);
-    
+    printf(">>>1>>>  >%s<\n\n", theServerIp);
     if(isRSA == 0) {
         // Invio della richiesta
         if(isVerbose) fprintf(stdout,"Richesta del '%s' inviata a:%s:%d \n", theMessage, theServerIp, theListeningPort);
@@ -160,6 +161,8 @@ int main(int argc, char *argv[]) {
             exit(EXIT_FAILURE);
         }
     } else {
+    printf(">>>2>>  >%s<\n\n", theServerIp);
+
         char *passw = NULL;
         rxlen = readAllFile(PUBKEYFILEC, buffer); // inviata la publik key     
         if(txData(sockfd, buffer, &rxlen, theServerIp, server_addr, NULL) == FALSE) { // chiave pubblica
@@ -177,25 +180,19 @@ int main(int argc, char *argv[]) {
             return(FALSE);
         }
         if(isVerbose) fprintf(stdout,"Chiave  pubblica ricevuta da:%s \n", theServerIp);
+    printf(">>>3>>>  >%s<   %s\n\n", theServerIp, theMessage);
 
-        size_t txlen = strlen((const char *)theMessage);
-printf("=== pubblica Server --\n");
-dumpKeyPair(keyServPub);
-
-        if(txData(sockfd, (char *)theMessage, &txlen, theServerIp, server_addr, keyServPub) == FALSE) {
+        size_t txlen = strlen(theMessage);
+        if(txData(sockfd, theMessage, &txlen, theServerIp, server_addr, keyServPub) == FALSE) {
             fprintf(stderr,"Errore di trasmissione !\n");
             return(FALSE);
         }
-   //    privateKey = k;
-      //  printf(">>>===privKey Add===>> %lu\n\n",privateKey);         
-      //  dumpKeyPair(privateKey);
-printf("=== privata Client --\n");
-dumpKeyPair(pairKey);      
+printf(">>>4>>>  >%s<\n\n", theServerIp);        
         if(rxData(sockfd, buffer, &txlen, theServerIp, pairKey) == FALSE) {  // leggi la risposta 
             fprintf(stderr,"Errore di ricezione !\n");
             return(FALSE);
         }
-        printf(">>>===privKey Add===>> %lu\n\n",pairKey);         
+    
         txlen = 3;
         char buf[10];
         strcpy(buf,"Bye");
@@ -203,15 +200,10 @@ dumpKeyPair(pairKey);
             fprintf(stderr,"Errore di trasmissione !\n");
             return(FALSE);
         }
-/*
-        int ret = clientKnock(sockfd, buffer, &rxlen, theServerIp, 
-                                pk, libctx, server_addr, theMessage);
+    printf(">>>5>>>  >%s<\n\n", theServerIp);
 
-        if(ret == FALSE) {
-            exit(EXIT_FAILURE);
-        }*/
     }
-    fprintf(stdout,"Risposta dal server %s: %s\n", theServerIp, buffer);
+//    fprintf(stdout,"Risposta dal server %s: %s\n", theServerIp, buffer);
     close(sockfd);
     exit(EXIT_SUCCESS);
 }

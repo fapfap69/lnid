@@ -187,7 +187,7 @@ int writeAllFile(char *fileName, char *buffer, size_t len) {
 }
 
 void creaIlSocket(int *sockfd, struct timeval *timeout, struct sockaddr_in *server_addr, 
-                    int theListeningPort, char *theServerIp ) {
+                    int theListeningPort, const char *theServerIp ) {
 
     // Creazione del socket UDP
     if ((*sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
@@ -266,12 +266,14 @@ int rxData(int sockfd, char *buffer, size_t *recv_len,
             fprintf(stderr,"rxData() : Errore di decifratura!");
             return(FALSE);
         }      
-        if(decr != NULL) memcpy(buffer, decr, lm); 
-        buffer[lm] = '\0';
-        *recv_len = lm;
-        OPENSSL_free(decr);
+        if(decr != NULL) {
+            memcpy(buffer, decr, lm); 
+            buffer[lm] = '\0';
+            *recv_len = lm;
+            OPENSSL_free(decr);
+        }
     }
-    if(isVerbose) fprintf(stdout,"rxData() :Ricevuti da %s bytes = %lu [%.20s...]\n", ip_address, *recv_len, buffer);
+    if(isVerbose) fprintf(stdout,"rxData() :Ricevuti bytes %lu = [%.8s...]\n", *recv_len , buffer);
     return(TRUE);
 }   
 
@@ -289,17 +291,19 @@ int txData(int sockfd, char *buffer, size_t *txlen,
             fprintf(stderr,"txData() : Errore di cifratura!");
             return(FALSE);
         }
-        if(decr != NULL) memcpy(buffer, decr, lm);
-        buffer[lm] = '\0';
-        *txlen = lm;
-        OPENSSL_free(decr);
+        if(decr != NULL) {
+            memcpy(buffer, decr, lm);
+            buffer[lm] = '\0';
+            *txlen = lm;
+            OPENSSL_free(decr);
+        }
     }
     sentLen = sendto(sockfd, buffer, *txlen, 0, (const struct sockaddr *)(&server_addr), sizeof(server_addr));
     if(sentLen <= 0) {
         fprintf(stderr,"txData() : Errore di trasmissione %zd bytes in spedizione, 0 inviati!", sentLen);
     }
-    if(isVerbose) fprintf(stdout,"txData() : Trasmesso a %s byte = %lu [%.20s...]\n", ip_address, *txlen, buffer);
-    *txlen = (size_t)sentLen;
+    *txlen = sentLen;
+    if(isVerbose) fprintf(stdout,"txData() : Trasmessi byte = %lu [%.20s...]\n", *txlen, buffer);
     return(TRUE);
 }
 
