@@ -120,10 +120,8 @@ void decode_cmdline(int argc, char *argv[]) {
 int main(int argc, char *argv[]) {
 
     char buffer[BUFFER_SIZE];
-    //EVP_PKEY *privateKey = NULL;
-    //EVP_PKEY *publicKey = NULL;
     EVP_PKEY *pairKey = NULL;
-    EVP_PKEY *keyServPub = NULL;
+    //EVP_PKEY *keyServPub = NULL;
     
     // legge la command line 
     decode_cmdline(argc, argv);
@@ -133,19 +131,16 @@ int main(int argc, char *argv[]) {
         char *passphrase = NULL;
         pairKey = generateRsaKeyPair(KEY_SIZE); // genera la coppia di chiavi
         if(pairKey == NULL) { exit(EXIT_FAILURE); } 
-        //if(storeRSAKeyPair(pairKey, PUBKEYFILES, PRIVKEYFILES) == 0) { exit(EXIT_FAILURE); } // crea i due file PEM
         storeKeyInPEM(pairKey, PUBKEYFILEC, EVP_PKEY_PUBLIC_KEY, passphrase);
         storeKeyInPEM(pairKey, PRIVKEYFILEC, EVP_PKEY_KEYPAIR, passphrase);
-   //     publicKey = loadKeyFromPEM(osslLibCtx, PUBKEYFILEC, passphrase);
-   //     privateKey = loadKeyFromPEM(osslLibCtx, PRIVKEYFILEC, passphrase);
-   //     OSSL_LIB_CTX_free(osslLibCtx);
     }
     // Creazione del socket UDP
     int sockfd;
     struct sockaddr_in server_addr;
     struct timeval timeout;
     size_t rxlen;
-    
+    int ret = FALSE;
+
     creaIlSocket(&sockfd, &timeout, &server_addr, theListeningPort, theServerIp);
     // dump_sockaddr_in(&server_addr);
     if(isRSA == 0) {
@@ -160,42 +155,11 @@ int main(int argc, char *argv[]) {
             fprintf(stderr,"Errore di ricezione !\n");
             exit(EXIT_FAILURE);
         }
-    } else {
-        char *passw = NULL;
-        rxlen = readAllFile(PUBKEYFILEC, buffer); // inviata la publik key     
-        if(txData(sockfd, buffer, &rxlen, theServerIp, &server_addr, NULL) == FALSE) { // chiave pubblica
-            fprintf(stderr,"Errore di trasmissione !\n");
-            return(FALSE);
-        }
-        if(isVerbose) fprintf(stdout,"Chiave pubblica inviata a:%s \n", theServerIp);
-        if(rxData(sockfd, buffer, &rxlen, theServerIp, NULL) == FALSE) { // server pub key ricevuta
-            return(FALSE);
-        }
-        if(writeAllFile("/tmp/pubserverkey.pem", buffer, rxlen) == FALSE) { exit(EXIT_FAILURE); }
-        keyServPub = loadKeyFromPEM(osslLibCtx, "/tmp/pubserverkey.pem", passw);
-        if(keyServPub == NULL) { 
-            fprintf(stderr,"Chiave pubblica non valida !\n");
-            return(FALSE);
-        }
-        if(isVerbose) fprintf(stdout,"Chiave  pubblica ricevuta da:%s \n", theServerIp);
-        size_t txlen = strlen(theMessage);
-        if(txData(sockfd, theMessage, &txlen, theServerIp, &server_addr, keyServPub) == FALSE) {
-            fprintf(stderr,"Errore di trasmissione !\n");
-            return(FALSE);
-        }
-        if(rxData(sockfd, buffer, &txlen, theServerIp, pairKey) == FALSE) {  // leggi la risposta 
-            fprintf(stderr,"Errore di ricezione !\n");
-            return(FALSE);
-        }
-        char buf[10];
-        strcpy(buf,"Bye !");
-        txlen = strlen(buf);
-        if(txData(sockfd, buf, &txlen, theServerIp, &server_addr, NULL) == FALSE) {
-            fprintf(stderr,"Errore di trasmissione !\n");
-            return(FALSE);
-        }
+    } else {        
+        rxlen = readAllFile(PUBKEYFILEC, buffer); // legge la mia la publick key  
+        ret = clientKnock(sockfd, buffer, &rxlen, theServerIp, pairKey, server_addr, theMessage); 
     }
-    fprintf(stdout,"Risposta dal server %s = >%s<\n", theServerIp, buffer);
+    fprintf(stdout,"Risposta dal server (%d) %s = >%s<\n", ret, theServerIp, buffer);
     close(sockfd);
     exit(EXIT_SUCCESS);
 }

@@ -27,36 +27,41 @@
 #include <sys/socket.h>
 #include <errno.h>
 
-#define DEFAULT_PORT 16969 // Porta UDP del demone
-#define BUFFER_SIZE 1024
-#define TIMEOUT_SEC 0  // Timeout in secondi
-#define TIMEOUT_USEC 50000 // Timeout in microsecondi
+#include "lnid-lib.c"
+#include "lnid-ssl.c"
 
 // Variabili Globali
+extern int isVerbose;
+
 int theListeningPort = DEFAULT_PORT;
-int isVerbose = 0;
+char *theServerIp = NULL;
+char theMesBuf[BUFFER_SIZE] = "HOSTNAME";
+char *theMessage = theMesBuf;
 int theDelay = 150; // milliseconds
 char theSubNet[50] = "192.168.0.0";
 char theNetMask[50] = "255.255.255.0";
-char theMessage[25] = "HOSTNAME";
 char theResponse[255];
 time_t theTimeOutSec = TIMEOUT_SEC;
 useconds_t theTimeOutUSec = TIMEOUT_USEC;
 
+int isRSA = 0; // Is the comunication RSA
+OSSL_LIB_CTX *osslLibCtx = NULL;
+
 // Funzione per stampare l'uso del programma
 void print_usage() {
-    printf("***  Local Network Identity Discovery Scanner  ***\n");
-    printf(" Auth: A.Franco - INFN Bari Italy \n");
-    printf(" Date : 28/11/2024 -  Ver. 0.1    \n\n");
-    printf("Utilizzo: lnid-scan -s <indirizzo_subnet> -p <porta> -t <milliseconds> -o <milliseconds> -d -v -h\n");
-    printf("  -s <indirizzo_subnet> : specifica la subnet\n");
-    printf("  -p <porta>        : specifica la porta da utilizzare (default=16969)\n");
-    printf("  -t <milliseconds> : ritardo fra scansioni successive (default=50\n");
-    printf("  -o <milliseconds> : timeout in ricezione (default=100\n");
-    printf("  -d                : ritorna il PID\n");
-    printf("  -m                : ritorna il MAC addr\n");
-    printf("  -v                : attiva la modalità verbose\n");
-    printf("  -h                : visualizza l'help\n");
+    fprintf(stdout,"***  Local Network Identity Discovery Scanner  ***\n");
+    fprintf(stdout," Auth: A.Franco - INFN Bari Italy \n");
+    fprintf(stdout," Date : 28/11/2024 -  Ver. 0.1    \n\n");
+    fprintf(stdout,"Utilizzo: lnid-scan -s <indirizzo_subnet> -p <porta> -t <milliseconds> -o <milliseconds> -d -v -h\n");
+    fprintf(stdout,"  -s <indirizzo_subnet> : specifica la subnet\n");
+    fprintf(stdout,"  -p <porta>        : specifica la porta da utilizzare (default=16969)\n");
+    fprintf(stdout,"  -t <milliseconds> : ritardo fra scansioni successive (default=50\n");
+    fprintf(stdout,"  -o <milliseconds> : timeout in ricezione (default=100\n");
+    fprintf(stdout,"  -d                : ritorna il PID\n");
+    fprintf(stdout,"  -m                : ritorna il MAC addr\n");
+    fprintf(stdout,"  -c                : attiva la modalità cifrata\n");
+    fprintf(stdout,"  -v                : attiva la modalità verbose\n");
+    fprintf(stdout,"  -h                : visualizza l'help\n");
     return;
 }
 
@@ -92,6 +97,9 @@ void decode_cmdline(int argc, char *argv[]) {
         else if (strcmp(argv[i], "-v") == 0) {
             isVerbose = 1;
         }
+        else if (strcmp(argv[i], "-c") == 0) {
+            isRSA = 1;
+        }
         else if (strcmp(argv[i], "-d") == 0) {
             strcpy(theMessage,"ID");
         }
@@ -103,7 +111,7 @@ void decode_cmdline(int argc, char *argv[]) {
             exit(EXIT_SUCCESS); // Error exit code
         }
         else {
-            printf("Opzione non valida: %s\n", argv[i]);
+            fprintf(stdout,"Opzione non valida: %s\n", argv[i]);
             print_usage();
             exit(EXIT_FAILURE); // Error exit code
         }
@@ -111,7 +119,7 @@ void decode_cmdline(int argc, char *argv[]) {
 
     // Verifica se sono stati forniti i parametri necessari
     if (*theSubNet == '\0' || theListeningPort == 0) {
-        printf("Errore: SubNet o porta errata.\n");
+        fprintf(stdout,"Errore: SubNet o porta errata.\n");
         exit(EXIT_FAILURE); // Error exit code
     }
     if(theTimeOutSec == 0 && theTimeOutUSec == 0) {
@@ -136,84 +144,30 @@ void decode_cmdline(int argc, char *argv[]) {
             strncat(theSubNet, ".0", 49);
             break;
         default:
-            printf("Errore: SubNet %s non ammessa.\n", theSubNet);
+            fprintf(stdout,"Errore: SubNet %s non ammessa.\n", theSubNet);
             exit(EXIT_FAILURE); // Error exit code
             break;
     }
 
     // Stampa delle informazioni di configurazione
     if(isVerbose) {
-        printf("Configurazione:\n");
-        printf("  Subnet: %s\n", theSubNet);
-        printf("  Mask: %s\n", theNetMask);
-        printf("  Porta: %d\n", theListeningPort);
-        printf("  Ritardo: %d\n", theDelay);
-        printf("  Timeout: %ld\n", (long)theTimeOutSec * 1000 + ((long)theTimeOutUSec/1000));
-        printf("  Richiesta: %s\n", theMessage);
-        printf("  Modalità verbose attivata\n");
+        fprintf(stdout,"Configurazione:\n");
+        fprintf(stdout,"  Subnet: %s\n", theSubNet);
+        fprintf(stdout,"  Mask: %s\n", theNetMask);
+        fprintf(stdout,"  Porta: %d\n", theListeningPort);
+        fprintf(stdout,"  Ritardo: %d\n", theDelay);
+        fprintf(stdout,"  Timeout: %ld\n", (long)theTimeOutSec * 1000 + ((long)theTimeOutUSec/1000));
+        fprintf(stdout,"  Richiesta: %s\n", theMessage);
+        fprintf(stdout,"  Modalità cifrata %s\n", isRSA == 0 ? "disattivata" : "attivata" );
+        fprintf(stdout,"  Modalità verbose attivata\n");
     }
     return;
 } 
 
-
-// Funzione per inviare una richiesta UDP a un dato IP e porta
-int send_udp_request(const char *ip_address) {
-    int sockfd;
-    struct sockaddr_in server_addr;
-    struct timeval timeout;
-    char buffer[BUFFER_SIZE];
-
-    // Creazione del socket UDP
-    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("socket");
-        return -1;
-    }
-
-    // Imposta il timeout per il socket
-    timeout.tv_sec = theTimeOutSec;
-    timeout.tv_usec = theTimeOutUSec;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        perror("Errore nell'impostazione del timeout");
-        close(sockfd);
-        exit(EXIT_FAILURE);
-    }
-
-    // Impostazione dell'indirizzo del server
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(theListeningPort);
-    server_addr.sin_addr.s_addr = inet_addr(ip_address);
-
-    // Invio di una richiesta al demone (es. "ID" o "HOSTNAME")
-    if (sendto(sockfd, theMessage, strlen(theMessage), 0, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        perror("sendto");
-        close(sockfd);
-        return -1;
-    }
-    if(isVerbose) printf("Invio richiesta a %s: %s\n", ip_address, buffer);
-
-    // Ricezione della risposta dal demone
-    ssize_t recv_len = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, NULL, NULL);
-    if (recv_len < 0) {
-        if (errno == EWOULDBLOCK || errno == EAGAIN) {
-            if(isVerbose) printf("Timeout raggiunto per %s\n", ip_address);
-        } else {
-            if(isVerbose) printf("Errore durante la ricezione per %s", ip_address);
-        }
-        // Nessuna risposta ricevuta
-        close(sockfd);
-        return 0;
-    }
-
-    buffer[recv_len] = '\0';
-    if(isVerbose) printf("Risposta da %s: %s\n", ip_address, buffer);
-    close(sockfd);
-    strncpy(theResponse, buffer, 254);
-    return 1;  // Risposta ricevuta
-}
-
 // Funzione per generare gli indirizzi IP in una sottorete
-void scan_subnet(const char *subnet, const char *mask) {
+void scan_subnet(const char *subnet, const char *mask, EVP_PKEY *pairKey) {
+
+    // Crea gli indirzzi
     struct in_addr subnet_addr, mask_addr;
     inet_pton(AF_INET, subnet, &subnet_addr);
     inet_pton(AF_INET, mask, &mask_addr);
@@ -221,8 +175,7 @@ void scan_subnet(const char *subnet, const char *mask) {
     // Maschera inversa per ottenere la gamma degli IP
     unsigned int start_ip = ntohl(subnet_addr.s_addr) & ntohl(mask_addr.s_addr);
     unsigned int end_ip = start_ip | ~ntohl(mask_addr.s_addr);
-
-    if(isVerbose) printf("Scansione della sottorete %s con maschera %s...\n", subnet, mask);
+    if(isVerbose) fprintf(stdout,"Scansione della sottorete %s con maschera %s...\n", subnet, mask);
 
     // Scansione della gamma di indirizzi IP
     for (unsigned int ip = start_ip + 1; ip < end_ip; ip++) {
@@ -233,22 +186,36 @@ void scan_subnet(const char *subnet, const char *mask) {
         inet_ntop(AF_INET, &ip_addr, ip_string, INET_ADDRSTRLEN);
 
         // Invia la richiesta UDP a questo IP
-        if(send_udp_request(ip_string) == 1) { // ok
-            printf("%s %s\n",ip_string, theResponse);
+        if(sendUdpRequest(ip_string, theResponse, pairKey, theListeningPort,theMessage,isRSA) == TRUE) { // ok
+            fprintf(stdout,"%s %s\n",ip_string, theResponse);
         }
 
         // Inserisce un delay 
         usleep(theDelay * 1000);
     }
+    return;
 }
 
 int main(int argc, char *argv[]) {
 
-    // Decodifica la riga di comando 
+    //char buffer[BUFFER_SIZE];
+    EVP_PKEY *pairKey = NULL;
+    //EVP_PKEY *keyServPub = NULL;
+    
+    // legge la command line 
     decode_cmdline(argc, argv);
 
+    // Set up per la cifratura
+    if(isRSA) {
+        char *passphrase = NULL;
+        pairKey = generateRsaKeyPair(KEY_SIZE); // genera la coppia di chiavi
+        if(pairKey == NULL) { exit(EXIT_FAILURE); } 
+        storeKeyInPEM(pairKey, PUBKEYFILEC, EVP_PKEY_PUBLIC_KEY, passphrase);
+        storeKeyInPEM(pairKey, PRIVKEYFILEC, EVP_PKEY_KEYPAIR, passphrase);
+    }
+
     // Esegui lo scan della sottorete
-    scan_subnet(theSubNet, theNetMask);
+    scan_subnet(theSubNet, theNetMask, pairKey);
 
     exit(EXIT_SUCCESS);
 }

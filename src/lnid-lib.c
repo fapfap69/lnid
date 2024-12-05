@@ -270,8 +270,8 @@ void creaIlServerSocket(int *sockfd, struct sockaddr_in *server_addr,
 int rxData(int sockfd, char *buffer, size_t *recv_len, 
             char *ip_address, EVP_PKEY *keypair) {
 
-    *recv_len = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, NULL, NULL);
-    if (*recv_len < 0) {
+    ssize_t rxlen = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, NULL, NULL);
+    if (rxlen < 0) {
         if (errno == EWOULDBLOCK || errno == EAGAIN) {
             if(isVerbose) fprintf(stdout,"Timeout raggiunto per %s\n", ip_address);
         } else {
@@ -281,6 +281,7 @@ int rxData(int sockfd, char *buffer, size_t *recv_len,
         close(sockfd);
         return(FALSE);
     }
+    *recv_len = rxlen;
     buffer[*recv_len] = '\0'; 
     if(keypair != NULL) { // i dati sono criptati 
         unsigned char *decr;
@@ -334,32 +335,32 @@ int txData(int sockfd, char *buffer, size_t *txlen,
 // Bussa al server  
 //
 //
-int clientKnock(int sockfd, char *pubPEMKey, size_t *keylen, char *theServerIp, EVP_PKEY *keypair,
-                OSSL_LIB_CTX *libctx, struct sockaddr_in server_addr, char *theMessage) {
+int clientKnock(int sockfd, char *rxtxBuffer, size_t *buferLen, char *theServerIp, EVP_PKEY *keypair,
+                struct sockaddr_in server_addr, char *theMessage) {
     char buf[10];
+    char *passw = NULL;
 
-    if(txData(sockfd, pubPEMKey, keylen, theServerIp, &server_addr, NULL) == FALSE) { // chiave pubblica
+    if(txData(sockfd, rxtxBuffer, buferLen, theServerIp, &server_addr, NULL) == FALSE) { // chiave pubblica
         fprintf(stderr,"Errore di trasmissione !\n");
         return(FALSE);
     }
     if(isVerbose) fprintf(stdout,"Chiave pubblica inviata a:%s \n", theServerIp);
-    if(rxData(sockfd, pubPEMKey, keylen, theServerIp, NULL) == FALSE) { // server pub key ricevuta
+    if(rxData(sockfd, rxtxBuffer, buferLen, theServerIp, NULL) == FALSE) { // server pub key ricevuta
         return(FALSE);
     }
-    EVP_PKEY *keyServPub = setupPublicKey(libctx, NULL, TRUE, "/tmp/pubserverkey.pem",
-                                         (const unsigned char *)pubPEMKey, *keylen); // memorizza la chiave pubblica
+    if(writeAllFile("/tmp/pubserverkey.pem", rxtxBuffer, *buferLen) == FALSE) { exit(EXIT_FAILURE); }
+    EVP_PKEY *keyServPub = loadKeyFromPEM(NULL, "/tmp/pubserverkey.pem", passw);
     if(keyServPub == NULL) { 
         fprintf(stderr,"Chiave pubblica non valida !\n");
         return(FALSE);
     }
     if(isVerbose) fprintf(stdout,"Chiave  pubblica ricevuta da:%s \n", theServerIp);
-        
     size_t txlen = strlen((const char *)theMessage);
-    if(txData(sockfd, (char *)theMessage, &txlen, theServerIp, &server_addr, keyServPub) == FALSE) {
+    if(txData(sockfd, theMessage, &txlen, theServerIp, &server_addr, keyServPub) == FALSE) {
         fprintf(stderr,"Errore di trasmissione !\n");
         return(FALSE);
     }
-    if(rxData(sockfd, pubPEMKey, keylen, theServerIp, keypair) == FALSE) {  // leggi la risposta 
+    if(rxData(sockfd, rxtxBuffer, buferLen, theServerIp, keypair) == FALSE) {  // leggi la risposta 
         fprintf(stderr,"Errore di ricezione !\n");
         return(FALSE);
     }
@@ -372,6 +373,45 @@ int clientKnock(int sockfd, char *pubPEMKey, size_t *keylen, char *theServerIp, 
     return(TRUE);
 }
 
+
+// Funzione per inviare una richiesta UDP a un dato IP e porta
+int sendUdpRequest(char *ip_address, char *response, EVP_PKEY *pairKey,
+                    int theListeningPort, char *theMessage, int isRSA) {
+
+    char buffer[BUFFER_SIZE];
+    int ret = TRUE;
+
+    // Creazione del socket UDP
+    int sockfd;
+    struct sockaddr_in server_addr;
+    struct timeval timeout;
+    size_t rxlen;
+    
+    creaIlSocket(&sockfd, &timeout, &server_addr, theListeningPort, ip_address);
+
+    if(isRSA == 0) {
+        // Invio della richiesta
+        if(isVerbose) fprintf(stdout,"Richesta del '%s' inviata a:%s:%d \n", theMessage, ip_address, theListeningPort);
+        rxlen = strlen(theMessage);
+        if( txData(sockfd, theMessage, &rxlen, ip_address, &server_addr, NULL) == FALSE) {
+            fprintf(stderr,"Errore di trasmissione !\n");
+            ret = FALSE;
+        } else if( rxData(sockfd, buffer, &rxlen, ip_address, NULL) == FALSE) {
+            fprintf(stderr,"Errore di ricezione !\n");
+            ret = FALSE;
+        }
+    } else {        
+        rxlen = readAllFile(PUBKEYFILEC, buffer); // legge la mia la publick key  
+        ret = clientKnock(sockfd, buffer, &rxlen, ip_address, pairKey, server_addr, theMessage); 
+    }
+    if(ret == TRUE) {
+        buffer[rxlen] = '\0';
+        strncpy(response, buffer, 254);
+        if(isVerbose) fprintf(stdout,"Risposta da %s: %s\n", ip_address, buffer);
+    }
+    close(sockfd);
+    return(ret);
+}
 
 #endif
 // --------  EOF ---------
