@@ -65,15 +65,15 @@ OSSL v3.0 nedded !
 28/11/2024 - First release v.1.0
 
 28/11/2024 - Add the MAC address reference v.1.1
-06/12/2024 - ver. 2.0 - SSL support, organization, memory allocation check
-                        Cmake installation
+
+06/12/2024 - ver. 2.0 - SSL support, organization, memory allocation check, Cmake installation
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- GETTING STARTED -->
 ## Getting Started
 
-To start ...
+LNID => **L**ast **N**ight **I** **D**reamed... :)
 
 ### Prerequisites
 
@@ -144,6 +144,7 @@ the IP address for the subnet is mandatory, example: **192.168.1**
 - [x] SSL support
 - [ ] Compilation option with the OSSL 3.0 support 
 - [ ] Authentication
+- [ ] Extend to Windows platform
 - [ ] Translation in english
 - [ ] Fix
 
