@@ -39,8 +39,8 @@
 #include <net/if_dl.h>
 #endif
 
-#include "lnid-lib.c"
-#include "lnid-ssl.c"
+#include "lnid-lib.h"
+#include "lnid-ssl.h"
 
 // --- connection states ---
 #define ST_NOOSSL 0
@@ -72,7 +72,7 @@ OSSL_LIB_CTX *osslLibCtx = NULL;
 void print_usage() {
     fprintf(stdout,"***  Local Network Identity Discovery Server  ***\n");
     fprintf(stdout," Auth: A.Franco - INFN Bari Italy \n");
-    fprintf(stdout," Date : 28/11/2024 -  Ver. 1.1    \n\n");
+    fprintf(stdout," Date : 06/12/2024 -  Ver. 2.0    \n\n");
     fprintf(stdout,"Utilizzo: lnidd -e <ethernet> -p <porta> -v -h\n");
     fprintf(stdout,"  -e <ethernet>     : specifica la scheda ethernet da utilizzare  (default=eth0)\n");
     fprintf(stdout,"  -p <porta>        : specifica la porta da utilizzare  (default=16969)\n");

@@ -56,6 +56,8 @@ LNID solution:
 
 Only basic C POSIX functionalities: portability, lightness, semplicity.
 
+OSSL v3.0 nedded !
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ### History
@@ -63,7 +65,8 @@ Only basic C POSIX functionalities: portability, lightness, semplicity.
 28/11/2024 - First release v.1.0
 
 28/11/2024 - Add the MAC address reference v.1.1
-
+06/12/2024 - ver. 2.0 - SSL support, organization, memory allocation check
+                        Cmake installation
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -84,19 +87,27 @@ In order to install LNID
    ```sh
    git clone https://github.com/fapfap69/lnid.git
    ```
-2. Compile with make
+2. make the CMakeLists.txt
+
+   ```sh
+   cd src
+   mkdir build
+   cd build
+   cmake ..
+   ```
+3. make tke executables
    ```sh
    make all
    ```
-3. Copy executable files in the **/usr/local/bin/** folder. In order to do this you need the powers of Super Cow, otherwise you can put the for executables where you have the right rights
+4. Copy executable files in the **/usr/local/bin/** folder. In order to do this you need the powers of Super Cow, otherwise you can put the for executables where you have the right rights
    ```sh
    make install
    ```
-4. On the LNID server you must run the service as deamon. This script works for a Linux distribution that uses **systemctl** program, with the exacutable in the **/usr/local/bin** directory
+5. On the LNID server you must run the service as deamon. This script works for a Linux distribution that uses **systemctl** program, with the exacutable in the **/usr/local/bin** directory
    ```sh
    ./installaIlServizio.sh
    ```
-5. The client applications don't need installation
+6. The client applications don't need installation
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -130,6 +141,8 @@ the IP address for the subnet is mandatory, example: **192.168.1**
 ## Roadmap
 
 - [x] Istallation
+- [x] SSL support
+- [ ] Compilation option with the OSSL 3.0 support 
 - [ ] Authentication
 - [ ] Translation in english
 - [ ] Fix

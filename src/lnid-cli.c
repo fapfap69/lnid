@@ -27,8 +27,8 @@
 #include <sys/socket.h>
 #include <errno.h>
 
-#include "lnid-lib.c"
-#include "lnid-ssl.c"
+#include "lnid-lib.h"
+#include "lnid-ssl.h"
 
 // Variabili Globali
 extern int isVerbose;
@@ -45,7 +45,7 @@ OSSL_LIB_CTX *osslLibCtx = NULL;
 void print_usage() {
     fprintf(stdout,"***  Local Network Identity Discovery Client  ***\n");
     fprintf(stdout," Auth: A.Franco - INFN Bari Italy \n");
-    fprintf(stdout," Date : 28/11/2024 -  Ver. 0.1    \n\n");
+    fprintf(stdout," Date : 06/12/2024 -  Ver. 2.0    \n\n");
     fprintf(stdout,"Utilizzo: lnid-cli -i <indirizzo_ip> -p <porta> -d -v -h\n");
     fprintf(stdout,"  -i <indirizzo_ip> : specifica l'indirizzo IP del server\n");
     fprintf(stdout,"  -p <porta>        : specifica la porta da utilizzare (default=16969)\n");
@@ -119,7 +119,7 @@ void decode_cmdline(int argc, char *argv[]) {
 
 int main(int argc, char *argv[]) 
 {
-    char response[256]; // the server response !
+    char response[RESPONSE_SIZE]; 
     EVP_PKEY *pairKey = NULL;
 
     // legge la command line 
@@ -133,7 +133,7 @@ int main(int argc, char *argv[])
         storeKeyInPEM(pairKey, PUBKEYFILEC, EVP_PKEY_PUBLIC_KEY, passphrase);
         storeKeyInPEM(pairKey, PRIVKEYFILEC, EVP_PKEY_KEYPAIR, passphrase);
     }
-    
+
     int ret = sendUdpRequest(theServerIp, response, pairKey, theListeningPort, theMessage, isRSA);
     fprintf(stdout,"Risposta dal server (%d) %s = >%s<\n", ret, theServerIp, response);
     exit(EXIT_SUCCESS);

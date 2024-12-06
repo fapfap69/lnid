@@ -47,11 +47,12 @@
 int isVerbose = 0;
 
 // --- The SSL support
-#include "lnid-ssl.c"
+#include "lnid-ssl.h"
 
 // --- Web server ---
 #define DEFAULT_PORT 16969 // Porta su cui ascoltare
 #define BUFFER_SIZE 8192
+#define RESPONSE_SIZE 256
 #define MAX_CLIENTS 100
 #define TIMEOUT_SEC 2  // Timeout in secondi
 #define TIMEOUT_USEC 0 // Timeout in microsecondi
@@ -231,30 +232,41 @@ cleanup:
     return(FALSE);
 }
 
-int writeAllFile(char *fileName, char *buffer, size_t len) {
+//  Scrivi un intero file 
+//
+int writeAllFile(char *fileName, char *buffer, size_t len) 
+{
     FILE *fp = fopen(fileName, "w");
-    if(fp == NULL) return(FALSE);
+    if(fp == NULL) {
+        fprintf(stderr, "writeAllFile() : errore apertura file %s !", fileName);
+        return(FALSE);
+    }
     size_t wr = fwrite(buffer, 1, len, fp);
     fclose(fp);
-    if(wr != len) return(FALSE);
-    else return(TRUE);
+    if(wr != len) {
+        fprintf(stderr, "writeAllFile() : errore di scrittura su %s !", fileName);
+        return(FALSE);
+    }
+    return(TRUE);
 }
 
-void creaIlSocket(int *sockfd, struct timeval *timeout, struct sockaddr_in *server_addr, 
-                    int theListeningPort, const char *theServerIp ) {
-
+// ----- Crea il socket UDP , imposta il timeout e inizializza il IP del server ----
+// 
+void creaIlSocket(int *sockfd, struct timeval *timeout, 
+                    struct sockaddr_in *server_addr, 
+                    int theListeningPort, const char *theServerIp ) 
+{
     // Creazione del socket UDP
     if ((*sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("socket");
+        fprintf(stderr, "creaIlSocket() : errore nella creazione del socket !");
         exit(EXIT_FAILURE);
     }
-    if(isVerbose) fprintf(stdout,"Socket creato ...\n");
 
     // Imposta il timeout per il socket
     timeout->tv_sec = TIMEOUT_SEC;
     timeout->tv_usec = TIMEOUT_USEC;
     if (setsockopt(*sockfd, SOL_SOCKET, SO_RCVTIMEO, timeout, sizeof(*timeout)) < 0) {
-        perror("Errore nell'impostazione del timeout");
+        fprintf(stderr, "creaIlSocket() : Errore nell'impostazione del timeout !");
         close(*sockfd);
         exit(EXIT_FAILURE);
     }
@@ -264,18 +276,20 @@ void creaIlSocket(int *sockfd, struct timeval *timeout, struct sockaddr_in *serv
     server_addr->sin_family = AF_INET;
     server_addr->sin_port = htons(theListeningPort);
     server_addr->sin_addr.s_addr = inet_addr(theServerIp);
+    if(isVerbose) fprintf(stdout,"Socket creato su %s:%d !\n",theServerIp,theListeningPort);
     return;
 }
 
+// -----  Crea il socket per il server in listening mode -----
+//
 void creaIlServerSocket(int *sockfd, struct sockaddr_in *server_addr, 
-                        fd_set *read_fds, int theListeningPort ) {
-
+                        fd_set *read_fds, int theListeningPort ) 
+{
     // Creazione del socket UDP
     if ((*sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("socket");
+        fprintf(stderr, "creaIlServerSocket() : errore nella creazione del socket !");
         exit(EXIT_FAILURE);
     }
-    if(isVerbose) fprintf(stdout,"Socket creato \n");
 
     // Inizializzazione della struttura dell'indirizzo del server
     memset(server_addr, 0, sizeof(*server_addr));
@@ -285,79 +299,116 @@ void creaIlServerSocket(int *sockfd, struct sockaddr_in *server_addr,
 
     // Binding del socket all'indirizzo e alla porta
     if (bind(*sockfd, (const struct sockaddr*)server_addr, sizeof(*server_addr)) < 0) {
-        perror("bind");
+        fprintf(stderr, "creaIlServerSocket() : errore nel binding della poorta !");
         close(*sockfd);
         exit(EXIT_FAILURE);
     }
-
     FD_ZERO(read_fds);
     FD_SET(*sockfd, read_fds);
+    if(isVerbose) fprintf(stdout,"Server socket creato con successo : il ascolto sulla porta %d!\n", theListeningPort);
     return;
 }
 
 // ---- Ricezione della risposta con eventuale decriptatura
 //
-int rxData(int sockfd, char *buffer, size_t *recv_len, 
-            char *ip_address, EVP_PKEY *keypair) {
+int rxData(int sockfd, char **buffer, size_t *recv_len, 
+            char *ip_address, EVP_PKEY *keypair) 
+{
+    // per la decriptatura
+    unsigned char *decrBuffer = NULL;
+    size_t decLen = 0;  
 
-    ssize_t rxlen = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, NULL, NULL);
-    if (rxlen < 0) {
+    // Setup del buffer
+    int isAllocated = FALSE;
+    char *bufferPtr = *buffer; // copia il buffer
+    if(bufferPtr == NULL) { // dobbiamo allocare il buffer
+        bufferPtr = malloc(*recv_len);
+        isAllocated = TRUE;
+        if(bufferPtr== NULL) {
+            if(isVerbose) fprintf(stderr, "rxData() : Errore di allocazione della memoria !");
+            exit(EXIT_FAILURE);
+        }
+    }
+    // legge dal socket
+    ssize_t rxLen = recvfrom(sockfd, bufferPtr, *recv_len, 0, NULL, NULL);
+    if (rxLen < 0) { // Errore
         if (errno == EWOULDBLOCK || errno == EAGAIN) {
             if(isVerbose) fprintf(stdout,"Timeout raggiunto per %s\n", ip_address);
         } else {
             if(isVerbose) fprintf(stdout,"Errore durante la ricezione per %s", ip_address);
         }
         // Nessuna risposta ricevuta
-        close(sockfd);
-        return(FALSE);
+        goto cleanup;
     }
-    *recv_len = rxlen;
-    buffer[*recv_len] = '\0'; 
-    if(keypair != NULL) { // i dati sono criptati 
-        unsigned char *decr;
-        size_t lm;  
-        if(doDecrypt(keypair, (const unsigned char *)buffer, *recv_len,
-                     &decr, &lm) == FALSE) {
+    // i dati sono criptati !
+    if(keypair != NULL) {  
+        if(doDecrypt(keypair,
+                    (const unsigned char *)bufferPtr, rxLen,
+                    &decrBuffer, &decLen) == FALSE) {
             fprintf(stderr,"rxData() : Errore di decifratura!");
-            return(FALSE);
-        }      
-        if(decr != NULL) {
-            memcpy(buffer, decr, lm); 
-            buffer[lm] = '\0';
-            *recv_len = lm;
-            OPENSSL_free(decr);
+            goto cleanup;
         }
+        if(decrBuffer == NULL || decLen > *recv_len) {
+            fprintf(stderr,"rxData() : Errore di decifratura o buffer troppo piccolo !");
+            goto cleanup;
+        }
+        // copia i dati in uscita
+        memcpy(bufferPtr, decrBuffer, decLen); 
+        rxLen = decLen;
+        OPENSSL_free(decrBuffer);
     }
+    // OK valida il buffer
+    bufferPtr[rxLen] = '\0';
+    *buffer = bufferPtr; 
+    *recv_len = rxLen;
     if(isVerbose) fprintf(stdout,"rxData() :Ricevuti bytes %lu da %s\n", *recv_len , ip_address);
     return(TRUE);
+
+cleanup:
+    if(isAllocated == TRUE) free(bufferPtr);
+    if(decrBuffer != NULL) OPENSSL_free(decrBuffer);
+    close(sockfd);
+    return(FALSE);
 }   
 
 // ---- INvio della risposta con eventuale criptatura
 //
-int txData(int sockfd, char *buffer, size_t *txlen, 
-                char *ip_address, struct sockaddr_in *server_addr, 
-                EVP_PKEY *keypair) {
+int txData(int sockfd, char *buffer, size_t *txlen, char *ip_address, 
+                struct sockaddr_in *server_addr, EVP_PKEY *keypair) 
+{
+    // per la cifratura
+    unsigned char *decBuffer;
+    size_t decLen;
+    int isAllocated = FALSE;
 
+    // per la spedizione 
+    ssize_t toSentLen;
     ssize_t sentLen = 0;
+    char *txBuffer = NULL;
+
     if(keypair != NULL) { // bisogna crittografare 
-        unsigned char *decr;
-        size_t lm;
-        if(doEncrypt(keypair, (const unsigned char *)buffer, *txlen, &decr, &lm) == FALSE) {
+        if(doEncrypt(keypair, (const unsigned char *)buffer, *txlen, &decBuffer, &decLen) == FALSE) {
             fprintf(stderr,"txData() : Errore di cifratura!");
             return(FALSE);
         }
-        if(decr != NULL) {
-            memcpy(buffer, decr, lm);
-            buffer[lm] = '\0';
-            *txlen = lm;
-            OPENSSL_free(decr);
+        if(decBuffer != NULL) {
+            txBuffer = (char *)decBuffer;
+            toSentLen = decLen;
+            isAllocated = TRUE;
+        } else {
+            return(FALSE);
         }
+    } else {
+        txBuffer = buffer;
+        toSentLen = *txlen;
     }
-    sentLen = sendto(sockfd, buffer, *txlen, 0, (const struct sockaddr *)(server_addr), sizeof(*server_addr));
+    sentLen = sendto(sockfd, txBuffer, toSentLen, 0, (const struct sockaddr *)(server_addr), sizeof(*server_addr));
     if(sentLen <= 0) {
         fprintf(stderr,"txData() : Errore di trasmissione %zd bytes in spedizione, 0 inviati!", sentLen);
     }
+    // valida l'uscita;
     *txlen = sentLen;
+    if(isAllocated == TRUE) OPENSSL_free(decBuffer);
     if(isVerbose) fprintf(stdout,"txData() : Trasmessi byte = %lu a %s\n", *txlen, ip_address);
     return(TRUE);
 }
@@ -365,12 +416,14 @@ int txData(int sockfd, char *buffer, size_t *txlen,
 // Bussa al server  
 //
 //
-int clientKnock(int sockfd, char *rxtxBuffer, size_t *buferLen, char *theServerIp, EVP_PKEY *keypair,
-                struct sockaddr_in server_addr, char *theMessage) {
+int clientKnock(int sockfd, char **rxtxBuffer, size_t *buferLen, char *theServerIp, EVP_PKEY *keypair,
+                struct sockaddr_in server_addr, char *theMessage) 
+{
     char buf[10];
     char *passw = NULL;
+    char *txBuffer = *rxtxBuffer;
 
-    if(txData(sockfd, rxtxBuffer, buferLen, theServerIp, &server_addr, NULL) == FALSE) { // chiave pubblica
+    if(txData(sockfd, txBuffer, buferLen, theServerIp, &server_addr, NULL) == FALSE) { // chiave pubblica
         fprintf(stderr,"Errore di trasmissione !\n");
         return(FALSE);
     }
@@ -378,7 +431,7 @@ int clientKnock(int sockfd, char *rxtxBuffer, size_t *buferLen, char *theServerI
     if(rxData(sockfd, rxtxBuffer, buferLen, theServerIp, NULL) == FALSE) { // server pub key ricevuta
         return(FALSE);
     }
-    if(writeAllFile("/tmp/pubserverkey.pem", rxtxBuffer, *buferLen) == FALSE) { exit(EXIT_FAILURE); }
+    if(writeAllFile("/tmp/pubserverkey.pem", txBuffer, *buferLen) == FALSE) { exit(EXIT_FAILURE); }
     EVP_PKEY *keyServPub = loadKeyFromPEM(NULL, "/tmp/pubserverkey.pem", passw);
     if(keyServPub == NULL) { 
         fprintf(stderr,"Chiave pubblica non valida !\n");
@@ -403,11 +456,12 @@ int clientKnock(int sockfd, char *rxtxBuffer, size_t *buferLen, char *theServerI
     return(TRUE);
 }
 
-
 // Funzione per inviare una richiesta UDP a un dato IP e porta
+//
 int sendUdpRequest(char *ip_address, char *response, EVP_PKEY *pairKey,
-                    int theListeningPort, char *theMessage, int isRSA) {
-
+                    int theListeningPort, char *theMessage, int isRSA) 
+{
+    // alloca il buffer
     char *buffer = malloc(BUFFER_SIZE);
     if(buffer == NULL) {
         fprintf(stderr,"Errore di allocazione della memoria !\n");
@@ -415,35 +469,37 @@ int sendUdpRequest(char *ip_address, char *response, EVP_PKEY *pairKey,
     }
 
     int ret = TRUE;
+    size_t rxlen = 0;
 
     // Creazione del socket UDP
     int sockfd;
     struct sockaddr_in server_addr;
     struct timeval timeout;
-    size_t rxlen;
-    
     creaIlSocket(&sockfd, &timeout, &server_addr, theListeningPort, ip_address);
 
     if(isRSA == 0) {
         // Invio della richiesta
-        if(isVerbose) fprintf(stdout,"Richesta del '%s' inviata a:%s:%d \n", theMessage, ip_address, theListeningPort);
+        if(isVerbose) fprintf(stdout,"sendUdpRequest() : Richesta del '%s' inviata a:%s:%d \n", theMessage, ip_address, theListeningPort);
         rxlen = strlen(theMessage);
-        if( txData(sockfd, theMessage, &rxlen, ip_address, &server_addr, NULL) == FALSE) {
-            fprintf(stderr,"Errore di trasmissione !\n");
+        if(txData(sockfd, theMessage, &rxlen, ip_address, &server_addr, NULL) == FALSE) {
+            fprintf(stderr,"sendUdpRequest() : Errore di trasmissione !\n");
             ret = FALSE;
-        } else if( rxData(sockfd, buffer, &rxlen, ip_address, NULL) == FALSE) {
-            fprintf(stderr,"Errore di ricezione !\n");
-            ret = FALSE;
+        } else {
+            rxlen = BUFFER_SIZE; // massima dimensione in ricezione
+            if(rxData(sockfd, &buffer, &rxlen, ip_address, NULL) == FALSE) {
+               fprintf(stderr,"sendUdpRequest() : Errore di ricezione !\n");
+               ret = FALSE;
+            }
         }
     } else {    
-        rxlen = BUFFER_SIZE; // carica la dimensione massima del buffer pre allocato
+        rxlen = BUFFER_SIZE; // massima del buffer pre allocato
         if(readAllFile(PUBKEYFILEC, &buffer, &rxlen) == TRUE) {  // nel buffer la chiave pubblica del server
-            ret = clientKnock(sockfd, buffer, &rxlen, ip_address, pairKey, server_addr, theMessage); 
+            ret = clientKnock(sockfd, &buffer, &rxlen, ip_address, pairKey, server_addr, theMessage); 
         }
     }
     if(ret == TRUE) {
         buffer[rxlen] = '\0';
-        strncpy(response, buffer, 254);
+        strncpy(response, buffer, RESPONSE_SIZE);
         if(isVerbose) fprintf(stdout,"Risposta da %s: %s\n", ip_address, buffer);
     }
     free(buffer);

@@ -27,8 +27,8 @@
 #include <sys/socket.h>
 #include <errno.h>
 
-#include "lnid-lib.c"
-#include "lnid-ssl.c"
+#include "lnid-lib.h"
+#include "lnid-ssl.h"
 
 // Variabili Globali
 extern int isVerbose;
@@ -40,7 +40,7 @@ char *theMessage = theMesBuf;
 int theDelay = 150; // milliseconds
 char theSubNet[50] = "192.168.0.0";
 char theNetMask[50] = "255.255.255.0";
-char theResponse[255];
+char theResponse[RESPONSE_SIZE];
 time_t theTimeOutSec = TIMEOUT_SEC;
 useconds_t theTimeOutUSec = TIMEOUT_USEC;
 
@@ -51,7 +51,7 @@ OSSL_LIB_CTX *osslLibCtx = NULL;
 void print_usage() {
     fprintf(stdout,"***  Local Network Identity Discovery Scanner  ***\n");
     fprintf(stdout," Auth: A.Franco - INFN Bari Italy \n");
-    fprintf(stdout," Date : 28/11/2024 -  Ver. 0.1    \n\n");
+    fprintf(stdout," Date : 06/12/2024 -  Ver. 2.0    \n\n");
     fprintf(stdout,"Utilizzo: lnid-scan -s <indirizzo_subnet> -p <porta> -t <milliseconds> -o <milliseconds> -d -v -h\n");
     fprintf(stdout,"  -s <indirizzo_subnet> : specifica la subnet\n");
     fprintf(stdout,"  -p <porta>        : specifica la porta da utilizzare (default=16969)\n");
@@ -165,8 +165,8 @@ void decode_cmdline(int argc, char *argv[]) {
 } 
 
 // Funzione per generare gli indirizzi IP in una sottorete
-void scan_subnet(const char *subnet, const char *mask, EVP_PKEY *pairKey) {
-
+void scan_subnet(const char *subnet, const char *mask, EVP_PKEY *pairKey)
+{
     // Crea gli indirzzi
     struct in_addr subnet_addr, mask_addr;
     inet_pton(AF_INET, subnet, &subnet_addr);
@@ -196,12 +196,10 @@ void scan_subnet(const char *subnet, const char *mask, EVP_PKEY *pairKey) {
     return;
 }
 
-int main(int argc, char *argv[]) {
-
-    //char buffer[BUFFER_SIZE];
+int main(int argc, char *argv[])
+{
     EVP_PKEY *pairKey = NULL;
-    //EVP_PKEY *keyServPub = NULL;
-    
+
     // legge la command line 
     decode_cmdline(argc, argv);
 
@@ -216,7 +214,6 @@ int main(int argc, char *argv[]) {
 
     // Esegui lo scan della sottorete
     scan_subnet(theSubNet, theNetMask, pairKey);
-
     exit(EXIT_SUCCESS);
 }
 
