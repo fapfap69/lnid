@@ -16,6 +16,7 @@
  ---------------------------------------------------------
   HISTORY 
   28/11/2024  -  Creation
+  06/12/2024  -  Versione 2.0 - OK
 
  ---------------------------------------------------------
 */
@@ -39,6 +40,8 @@
 #define PUBKEYFILES "/tmp/publicserkey.pem"
 #define PRIVKEYFILEC "/tmp/privateclikey.pem"
 #define PUBKEYFILEC "/tmp/publicclikey.pem"
+#define SERVERPUBKEY "/tmp/serverpubkey.pem"
+#define CLIENTPUBKEY "/tmp/clientpubkey.pem"
 
 #define KEY_SIZE 2048
 #define EXPONENT RSA_F4
@@ -47,52 +50,69 @@
 
 #define FALSE 0
 #define TRUE 1
-#define BUFFER_SIZE 4096
 
 // Variabili globali
 extern int isVerbose; // definito nel main program 
 static const char *propq = NULL;
 
-// stampa l'errore
-void errorAndExit(const char* msg) {
-    fprintf(stderr, "Errore : %s\n", msg);
+// stampa l'errore e abort del programma
+//
+void errorAndExit(const char* msg) 
+{
+    fprintf(stderr, "OSSL Errore : %s\n", msg);
     char buf[256];
     int err = ERR_get_error();
     ERR_error_string_n(err, buf, sizeof(buf));
-    fprintf(stderr, "err no: %d , %s\n", err, buf);
+    fprintf(stderr, "num err = %d, %s\n", err, buf);
     exit(EXIT_FAILURE);
 }
 
-// ---- Genera la coppia di chiavi Priv e Pub
-// Ret: NULL per errore
-EVP_PKEY *generateRsaKeyPair(unsigned int bits) {
+// ---- Genera la coppia di chiavi Priv e Pub ----
+// Ret: la coppia di chiavi generate, NULL per errore
+//
+EVP_PKEY *generateRsaKeyPair(unsigned int bits) 
+{
     const uint32_t exponent = 0x10001;
     EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
-    if(ctx == NULL) { errorAndExit("generateRsaKeyPair() : Could not create a context for RSA_PSS"); }
-    if(EVP_PKEY_keygen_init(ctx) <= 0) { errorAndExit("generateRsaKeyPair() : Could not initialize the RSA context"); }
-    if(EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, bits) <= 0) { errorAndExit("generateRsaKeyPair() : EVP_PKEY_CTX_set_rsa_keygen_bits failed"); }
+    if(ctx == NULL) {
+        errorAndExit("generateRsaKeyPair() : Non posso creare il contesto per RSA_PSS"); 
+    }
+    if(EVP_PKEY_keygen_init(ctx) <= 0) {
+        errorAndExit("generateRsaKeyPair() : Inizializzazione del contesto RSA non riuscito");
+    }
+    if(EVP_PKEY_CTX_set_rsa_keygen_bits(ctx, bits) <= 0) {
+        errorAndExit("generateRsaKeyPair() : Set per la chiave RSA non riuscito");
+    }
     BIGNUM* exponent_bn = BN_new();
     BN_set_word(exponent_bn, exponent);
-    if(EVP_PKEY_CTX_set_rsa_keygen_pubexp(ctx, exponent_bn) <= 0) { errorAndExit("generateRsaKeyPair() : EVP_PKEY_CTX_set_rsa_keygen_pubexp failed"); }
+    if(EVP_PKEY_CTX_set_rsa_keygen_pubexp(ctx, exponent_bn) <= 0) {
+        errorAndExit("generateRsaKeyPair() : EVP_PKEY_CTX_set_rsa_keygen_pubexp fallito !");
+    }
     EVP_PKEY* pkey = NULL;
-    if(EVP_PKEY_keygen(ctx, &pkey) != 1) { errorAndExit("generateRsaKeyPair() : EVP_PKEY_keygen failed"); }
+    if(EVP_PKEY_keygen(ctx, &pkey) != 1) { 
+        errorAndExit("generateRsaKeyPair() : Generazione della coppia di chiavi non riuscita !");
+    }
     EVP_PKEY_CTX_free(ctx);
     return(pkey);
 }
 
+// ---- Stampa il contenuto della chiave ----
+//
 void dumpKeyPair(EVP_PKEY *keypair) {
-    printf("----- Key Pair Dump ------\n");
+    printf("----- Coppia di chiavi : Pubblica -----\n");
     EVP_PKEY_print_public_fp(stdout, keypair, 1, NULL);
+    printf("----- Coppia di chiavi : Privata  -----\n");
     EVP_PKEY_print_private_fp(stdout, keypair, 1, NULL); 
-    printf("---------   EOF  ----------\n");
+    printf("----------------~ O ^ O ~--------------\n");
     return;
 }
 
 // --- crea due file PEM a partire da una struttura EVP_PKEY
 //  Ret = FALSE per errore
+//
 int storeRSAKeyPair(EVP_PKEY *keypair, const char *publicKeyPEM, const char *privateKeyPEM) {
     FILE *fp = NULL;  
-    fp = fopen(publicKeyPEM, "w"); // Output a PEM encoding of the public key. 
+    fp = fopen(publicKeyPEM, "w");
     if(fp == NULL) { 
         fprintf(stderr, "storeRsaKeyPair() : Errore creazione file PEM chiave pubblica = %s",publicKeyPEM);
         return FALSE;
@@ -119,7 +139,8 @@ int storeRSAKeyPair(EVP_PKEY *keypair, const char *publicKeyPEM, const char *pri
 }
 
 // ---- Carica la chiave da un file PEM
-// Ret = NULL per errore
+// Ret = la chiave letta, NULL per errore
+//
 EVP_PKEY *loadKeyFromPEM(OSSL_LIB_CTX *libctx, const char *fileName, const char *passphrase)
 {
     int ret = 0;
@@ -159,13 +180,14 @@ cleanup:
     return pkey;
 }
 
-// ---- Regista la chiave in un file PEM
-// La selection controlla sela private key e' esportata
-// EVP_PKEY_KEYPAIR, o solo la pubblica EVP_PKEY_PUBLIC_KEY
-// Ret = NULL per errore
+// ---- Regista la chiave in un file PEM -------
+// La selection controlla se la private key e' esportata EVP_PKEY_KEYPAIR
+// o solo la pubblica EVP_PKEY_PUBLIC_KEY
+// Ret = FALSE per errore
+//
 int storeKeyInPEM(EVP_PKEY *pkey, const char *fileName, int selection, const char *passphrase)
 {
-    int ret = 0;
+    int ret = FALSE;
     OSSL_ENCODER_CTX *ectx = NULL;
 
     FILE *fp = NULL;
@@ -196,18 +218,44 @@ int storeKeyInPEM(EVP_PKEY *pkey, const char *fileName, int selection, const cha
         fprintf(stderr, "storeKeyInPEM() : OSSL_ENCODER_to_fp() failed\n");
         goto cleanup;
     }
-    ret = 1;
+    ret = TRUE;
 cleanup:
     fclose(fp);
     OSSL_ENCODER_CTX_free(ectx);
     return ret;
 }
 
+// ---- Regista la chiave in un buffer di memoria -------
+// La selection controlla se la private key e' esportata EVP_PKEY_KEYPAIR
+// o solo la pubblica EVP_PKEY_PUBLIC_KEY
+// Ret = FALSE per errore
+//
+int storeKeyInMem(EVP_PKEY *pkey, char **memBuffer, size_t *bufLen, int selection)
+{
+    int ret = FALSE;
+    OSSL_ENCODER_CTX *ectx = NULL;
+
+    // Crea un PEM encoder ctx.
+    ectx = OSSL_ENCODER_CTX_new_for_pkey(pkey, selection, "PEM", NULL, propq);
+    if (ectx == NULL) {
+        fprintf(stderr, "storeKeyInMem() : OSSL_ENCODER_CTX_new_for_pkey() errore!\n");
+        goto cleanup;
+    }
+    *memBuffer = NULL; // resetta per fare allocare 
+    if(OSSL_ENCODER_to_data(ectx, (unsigned char **)memBuffer, bufLen) == FALSE) {
+        fprintf(stderr, "storeKeyInMem() : errore di OSSL_ENCODER_to_data() !\n");
+        goto cleanup;
+    }
+    ret = TRUE;
+cleanup:
+    OSSL_ENCODER_CTX_free(ectx);
+    return ret;
+}
+
 // Esegue la decriptatura con chiave privata
+// Ritorna TRUE / FALSE
 //
-//
-static int doDecrypt(EVP_PKEY *privateKey,
-                      const unsigned char *in, size_t in_len,
+static int doDecrypt(EVP_PKEY *privateKey, const unsigned char *in, size_t in_len,
                       unsigned char **out, size_t *out_len)
 {
     EVP_PKEY_CTX* dec_ctx = EVP_PKEY_CTX_new(privateKey, NULL);
@@ -224,13 +272,13 @@ static int doDecrypt(EVP_PKEY *privateKey,
     // alloca il buffer
     size_t buf_len = *out_len;
     unsigned char *buf = NULL;
-    buf = OPENSSL_malloc(buf_len);
+    buf = OPENSSL_malloc(buf_len + 2);
     if(buf == NULL) {
         errorAndExit("doDecrypt() : Errore di allocazione OPENSSL_malloc().\n");
     }
     // Decifra
     if(EVP_PKEY_decrypt(dec_ctx, buf, &buf_len, in, in_len) <= 0) {
-        errorAndExit("doDecrypt() : EVP_PKEY_decrypt failed");
+        errorAndExit("doDecrypt() : EVP_PKEY_decrypt errore !");
     }
     *out_len = buf_len;
     *out = buf;
@@ -244,10 +292,9 @@ static int doDecrypt(EVP_PKEY *privateKey,
 }
 
 // Esegue la criptatura con chiave pubblica
+// Return TRUE/FALSE
 //
-//
-static int doEncrypt(EVP_PKEY *publicKey,
-                     const unsigned char *in, size_t in_len,
+static int doEncrypt(EVP_PKEY *publicKey, const unsigned char *in, size_t in_len,
                      unsigned char **out, size_t *out_len)
 {
     // Crea un nuovo contesto per criptare.
@@ -265,7 +312,7 @@ static int doEncrypt(EVP_PKEY *publicKey,
     // alloca il buffer
     size_t buf_len = *out_len;
     unsigned char *buf = NULL;
-    buf = OPENSSL_malloc(buf_len);
+    buf = OPENSSL_malloc(buf_len + 2);
     if(buf == NULL) {
         errorAndExit("doEncrypt() : Errore di allocazione OPENSSL_malloc().\n");
     }
@@ -289,37 +336,6 @@ static int doEncrypt(EVP_PKEY *publicKey,
 void freeRsaKeyPair(EVP_PKEY *keypair) {
     EVP_PKEY_free(keypair);   
     return;
-}
-
-EVP_PKEY *setupPublicKey(OSSL_LIB_CTX *libctx, const char *propq,
-                            int public, const char *fileName,
-                            const unsigned char *data, size_t data_len)
-{
-    OSSL_DECODER_CTX *dctx = NULL;
-    EVP_PKEY *pkey = NULL;
-    int selection;
-
-    if (public == TRUE) {
-        selection = EVP_PKEY_PUBLIC_KEY;
-    } else {
-        selection = EVP_PKEY_KEYPAIR;
-    }
-    dctx = OSSL_DECODER_CTX_new_for_pkey(&pkey, "DER", NULL, "RSA",
-                                         selection, libctx, propq);
-    (void)OSSL_DECODER_from_data(dctx, &data, &data_len);
-    OSSL_DECODER_CTX_free(dctx);
-
-    FILE *fp = fopen(fileName, "w");
-    if(fp == NULL) { 
-        fprintf(stderr, "setupPublicKey() : errore di creazione del file %s !\n",fileName);
-        return(pkey); 
-    }
-    size_t wr = fwrite(data, data_len, 1, fp);
-    if(data_len != wr) {
-        fprintf(stderr, "setupPublicKey() : errore di scrittura nel file %s !\n",fileName);
-    }
-    fclose(fp);
-    return(pkey);
 }
 
 #endif

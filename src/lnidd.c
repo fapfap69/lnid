@@ -143,7 +143,7 @@ void buildTheResponse(char *message) {
 }
 
 void handleClientMessage(Client *client, char *message, size_t *bytes_received ) {
-    if(isVerbose) fprintf(stdout," Stato:%d Ricevuto messaggio da %s:%d: %.10s...\n",client->state, inet_ntoa(client->addr.sin_addr), ntohs(client->addr.sin_port), message);
+    if(isVerbose) fprintf(stdout," Stato:%d Ricevuto messaggio da %s:%d\n",client->state, inet_ntoa(client->addr.sin_addr), ntohs(client->addr.sin_port));
     
     unsigned char *decr;
     size_t lm;
@@ -154,23 +154,24 @@ void handleClientMessage(Client *client, char *message, size_t *bytes_received )
             if(writeAllFile("/tmp/pubclientkey.pem", message, *bytes_received) == FALSE) { exit(EXIT_FAILURE); }
             client->pubKey = loadKeyFromPEM(osslLibCtx, "/tmp/pubclientkey.pem", passw);
             if(client->pubKey == NULL) { client->state = ST_DESTROY; return; }
-            *bytes_received = readAllFile(PUBKEYFILES, message);  // nel buffer la chiave pubblica del server
-            if(*bytes_received <= 0) { client->state = ST_DESTROY; break; }
+            *bytes_received = BUFFER_SIZE; // carica la dimensione massima del buffer pre allocato
+            if(readAllFile(PUBKEYFILES, &message, bytes_received) == FALSE) {  // nel buffer la chiave pubblica del server
+                client->state = ST_DESTROY;
+                break; 
+            }
             client->state = ST_SSLHANDSHAKE;
             break;
 
         case ST_SSLHANDSHAKE: // Adesso si ricevono messaggi criptati
-printf("=== privata Server --\n");
-dumpKeyPair(pairKey);
+            // printf("=== privata Server --\n");
+            // dumpKeyPair(pairKey);
             doDecrypt(pairKey, (const unsigned char *)message, *bytes_received, &decr, &lm);
             if(decr != NULL) memcpy(message, decr, lm); 
             message[lm] = '\0';
             OPENSSL_free(decr);
-
             buildTheResponse(message); // compone la risposta
-
-printf("=== pubblica client --\n");
-dumpKeyPair(client->pubKey);
+            // printf("=== pubblica client --\n");
+            // dumpKeyPair(client->pubKey);
             doEncrypt(client->pubKey, (const unsigned char *)message, strlen(message), &decr, &lm); //cripta
             memcpy(message, decr, lm);
             message[lm] = '\0';

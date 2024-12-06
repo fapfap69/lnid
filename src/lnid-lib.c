@@ -16,6 +16,7 @@
  ---------------------------------------------------------
   HISTORY 
   28/11/2024  -  Creation
+  06/12/2024  -  Versione 2.0 : OK
 
  ---------------------------------------------------------
 */
@@ -42,7 +43,7 @@
 #include <net/if_dl.h>
 #endif
 
-
+//  Variabili globali 
 int isVerbose = 0;
 
 // --- The SSL support
@@ -50,57 +51,64 @@ int isVerbose = 0;
 
 // --- Web server ---
 #define DEFAULT_PORT 16969 // Porta su cui ascoltare
-#define BUFFER_SIZE 4096
+#define BUFFER_SIZE 8192
 #define MAX_CLIENTS 100
 #define TIMEOUT_SEC 2  // Timeout in secondi
 #define TIMEOUT_USEC 0 // Timeout in microsecondi
 #define TRUE 1
 #define FALSE 0
 
-
 // Funzione per fare il dump di una sockaddr_in
-void dump_sockaddr_in(const struct sockaddr_in *addr) {
+//
+void dump_sockaddr_in(const struct sockaddr_in *addr) 
+{
     if (addr == NULL) {
-        printf("La struttura sockaddr_in è NULL.\n");
+        fprintf(stderr, "dump_sockaddr_in() : La struttura sockaddr_in è NULL.\n");
         return;
     }
     // Converti l'indirizzo IP da network byte order a una stringa leggibile
     char ip_str[INET_ADDRSTRLEN]; // Buffer per l'indirizzo IP
     if (inet_ntop(AF_INET, &(addr->sin_addr), ip_str, sizeof(ip_str)) == NULL) {
-        perror("Errore nella conversione dell'indirizzo IP");
+        fprintf(stderr, "dump_sockaddr_in() : Errore nella conversione dell'indirizzo IP");
         return;
     }
     // Estrai e converte il numero di porta da network byte order
     unsigned short port = ntohs(addr->sin_port);
     // Stampa le informazioni
-    printf("indirizzo variabile in memoria %lu\n", (unsigned long)addr);
-    printf("sockaddr_in:\n");
-    printf("  Indirizzo IP: %s\n", ip_str);
-    printf("  Porta: %u\n", port);
-    printf("  Famiglia: %s\n", addr->sin_family == AF_INET ? "AF_INET" : "Sconosciuta");
+    fprintf(stdout, "sockaddr_in:\n");
+    fprintf(stdout, "  indirizzo variabile in memoria %lu\n", (unsigned long)addr);
+    fprintf(stdout, "  Indirizzo IP: %s\n", ip_str);
+    fprintf(stdout, "  Porta: %u\n", port);
+    fprintf(stdout, "  Famiglia: %s\n", addr->sin_family == AF_INET ? "AF_INET" : "Sconosciuta");
     return;
 }
 
 // Funzione per ottenere l'hostname
-char* get_hostname() {
+//
+char* get_hostname() 
+{
     static char hostname[256];
     if (gethostname(hostname, sizeof(hostname)) == 0) {
         return hostname;
     } else {
-        perror("gethostname");
+        fprintf(stderr, "get_hostname() : errore ! ");
         return "Unknown";
     }
 }
 
 // Funzione per ottenere un ID univoco (può essere il PID o qualsiasi altra cosa)
-char* get_unique_id() {
+//
+char* get_unique_id() 
+{
     static char id[256];
     snprintf(id, sizeof(id), "ID-%d", getpid()); // Utilizza il PID come ID
     return id;
 }
 
 // Funzione per ottenere il MAC address da usare come ID
-char *get_macaddr_id(char *theEthernetMAC) {
+//
+char *get_macaddr_id(char *theEthernetMAC) 
+{
     static char id[256];
     unsigned char *mac = NULL;
 
@@ -179,26 +187,48 @@ char *get_macaddr_id(char *theEthernetMAC) {
 }
 
 // ---- Legge un intero file in un buffer di memoria
+// Ritorna TRUE/ FALSE
 //
-size_t readAllFile(char *fileName, char *buffer) {
+int readAllFile(char *fileName, char **buffer, size_t *lenBuf) 
+{
+    int isMemAllocate = FALSE;
     size_t fsize = 0;
     FILE *fp = fopen(fileName, "rb");
-    if(fp == NULL) return(fsize);
+    if(fp == NULL) {
+        fprintf(stderr,"readAllFile() : errore apertura file %s !", fileName); 
+        goto cleanup;
+    }
     fseek(fp, 0, SEEK_END);
     fsize = ftell(fp);
-    fseek(fp, 0, SEEK_SET); 
-    if(fsize > BUFFER_SIZE) {
-        fprintf(stdout,"readAllFile() : file eccedente la massima dimensione dei buffer !"); 
-        fsize = 0;
+    fseek(fp, 0, SEEK_SET);
+    if((*buffer) == NULL) { // dobbiamo allocare la memoria
+        *buffer = malloc(fsize + 2);
+        if(*buffer == NULL) {
+            fprintf(stderr,"readAllFile() : errore allocazione buffer per il file %s !", fileName); 
+            goto cleanup;
+        }
+        isMemAllocate = TRUE;
     } else {
-        size_t re = fread(buffer, 1, fsize, fp);
-        if(re != fsize) {
-            fprintf(stdout,"readAllFile() : errore in lettura (%lu->%lu)!\n",fsize,re); 
-            fsize = 0;
+        if(fsize > *lenBuf) {
+            fprintf(stderr,"readAllFile() : file eccedente la massima dimensione dei buffer !"); 
+            goto cleanup;
         } 
     }
+    // possiamo leggere il file
+    size_t re = fread(*buffer, 1, fsize, fp);
+    if(re != fsize) {
+        fprintf(stderr,"readAllFile() : errore in lettura (%lu->%lu)!\n",fsize,re); 
+        goto cleanup;
+    } 
+    *lenBuf = re;
     fclose(fp);
-    return(fsize);
+    return(TRUE);
+
+cleanup:
+    *lenBuf = -1;
+    if(fp != NULL) fclose(fp);
+    if(isMemAllocate == TRUE) { free(*buffer); *buffer = NULL; }
+    return(FALSE);
 }
 
 int writeAllFile(char *fileName, char *buffer, size_t len) {
@@ -298,7 +328,7 @@ int rxData(int sockfd, char *buffer, size_t *recv_len,
             OPENSSL_free(decr);
         }
     }
-    if(isVerbose) fprintf(stdout,"rxData() :Ricevuti bytes %lu da %s = [%.8s...]\n", *recv_len , ip_address, buffer);
+    if(isVerbose) fprintf(stdout,"rxData() :Ricevuti bytes %lu da %s\n", *recv_len , ip_address);
     return(TRUE);
 }   
 
@@ -328,7 +358,7 @@ int txData(int sockfd, char *buffer, size_t *txlen,
         fprintf(stderr,"txData() : Errore di trasmissione %zd bytes in spedizione, 0 inviati!", sentLen);
     }
     *txlen = sentLen;
-    if(isVerbose) fprintf(stdout,"txData() : Trasmessi byte = %lu a %s [%.20s...]\n", *txlen, ip_address, buffer);
+    if(isVerbose) fprintf(stdout,"txData() : Trasmessi byte = %lu a %s\n", *txlen, ip_address);
     return(TRUE);
 }
 
@@ -378,7 +408,12 @@ int clientKnock(int sockfd, char *rxtxBuffer, size_t *buferLen, char *theServerI
 int sendUdpRequest(char *ip_address, char *response, EVP_PKEY *pairKey,
                     int theListeningPort, char *theMessage, int isRSA) {
 
-    char buffer[BUFFER_SIZE];
+    char *buffer = malloc(BUFFER_SIZE);
+    if(buffer == NULL) {
+        fprintf(stderr,"Errore di allocazione della memoria !\n");
+        return(FALSE);
+    }
+
     int ret = TRUE;
 
     // Creazione del socket UDP
@@ -400,15 +435,18 @@ int sendUdpRequest(char *ip_address, char *response, EVP_PKEY *pairKey,
             fprintf(stderr,"Errore di ricezione !\n");
             ret = FALSE;
         }
-    } else {        
-        rxlen = readAllFile(PUBKEYFILEC, buffer); // legge la mia la publick key  
-        ret = clientKnock(sockfd, buffer, &rxlen, ip_address, pairKey, server_addr, theMessage); 
+    } else {    
+        rxlen = BUFFER_SIZE; // carica la dimensione massima del buffer pre allocato
+        if(readAllFile(PUBKEYFILEC, &buffer, &rxlen) == TRUE) {  // nel buffer la chiave pubblica del server
+            ret = clientKnock(sockfd, buffer, &rxlen, ip_address, pairKey, server_addr, theMessage); 
+        }
     }
     if(ret == TRUE) {
         buffer[rxlen] = '\0';
         strncpy(response, buffer, 254);
         if(isVerbose) fprintf(stdout,"Risposta da %s: %s\n", ip_address, buffer);
     }
+    free(buffer);
     close(sockfd);
     return(ret);
 }

@@ -117,15 +117,14 @@ void decode_cmdline(int argc, char *argv[]) {
     return;
 } 
 
-int main(int argc, char *argv[]) {
-
-    char buffer[BUFFER_SIZE];
+int main(int argc, char *argv[]) 
+{
+    char response[256]; // the server response !
     EVP_PKEY *pairKey = NULL;
-    //EVP_PKEY *keyServPub = NULL;
-    
+
     // legge la command line 
     decode_cmdline(argc, argv);
-
+    
     // Set up per la cifratura
     if(isRSA) {
         char *passphrase = NULL;
@@ -134,33 +133,10 @@ int main(int argc, char *argv[]) {
         storeKeyInPEM(pairKey, PUBKEYFILEC, EVP_PKEY_PUBLIC_KEY, passphrase);
         storeKeyInPEM(pairKey, PRIVKEYFILEC, EVP_PKEY_KEYPAIR, passphrase);
     }
-    // Creazione del socket UDP
-    int sockfd;
-    struct sockaddr_in server_addr;
-    struct timeval timeout;
-    size_t rxlen;
-    int ret = FALSE;
-
-    creaIlSocket(&sockfd, &timeout, &server_addr, theListeningPort, theServerIp);
-    // dump_sockaddr_in(&server_addr);
-    if(isRSA == 0) {
-        // Invio della richiesta
-        if(isVerbose) fprintf(stdout,"Richesta del '%s' inviata a:%s:%d \n", theMessage, theServerIp, theListeningPort);
-        rxlen = strlen(theMessage);
-        if( txData(sockfd, theMessage, &rxlen, theServerIp, &server_addr, NULL) == FALSE) {
-            fprintf(stderr,"Errore di trasmissione !\n");
-            exit(EXIT_FAILURE);
-        }
-        if( rxData(sockfd, buffer, &rxlen, theServerIp, NULL) == FALSE) {
-            fprintf(stderr,"Errore di ricezione !\n");
-            exit(EXIT_FAILURE);
-        }
-    } else {        
-        rxlen = readAllFile(PUBKEYFILEC, buffer); // legge la mia la publick key  
-        ret = clientKnock(sockfd, buffer, &rxlen, theServerIp, pairKey, server_addr, theMessage); 
-    }
-    fprintf(stdout,"Risposta dal server (%d) %s = >%s<\n", ret, theServerIp, buffer);
-    close(sockfd);
+    
+    int ret = sendUdpRequest(theServerIp, response, pairKey, theListeningPort, theMessage, isRSA);
+    fprintf(stdout,"Risposta dal server (%d) %s = >%s<\n", ret, theServerIp, response);
     exit(EXIT_SUCCESS);
 }
+
 
