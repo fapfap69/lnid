@@ -47,6 +47,10 @@
 //  Variabili globali 
 int isVerbose = 0;
 
+// Definizione variabili rate limiting
+RateLimitEntry rate_limit_table[MAX_CLIENTS] = {0};
+int rate_limit_entries = 0;
+
 // Funzione per controllo rate limiting
 // Ritorna TRUE se la richiesta è permessa, FALSE se bloccata
 int checkRateLimit(uint32_t ip_addr) {
@@ -137,9 +141,9 @@ typedef struct {
     int request_count;
 } RateLimitEntry;
 
-// Array globale per rate limiting
-static RateLimitEntry rate_limit_table[MAX_CLIENTS];
-static int rate_limit_entries = 0;
+// Dichiarazioni esterne per rate limiting
+extern RateLimitEntry rate_limit_table[MAX_CLIENTS];
+extern int rate_limit_entries;
 
 // Funzione per fare il dump di una sockaddr_in
 //
