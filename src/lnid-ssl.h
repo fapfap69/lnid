@@ -342,7 +342,7 @@ static int doDecryptInternal(EVP_PKEY *privateKey, const unsigned char *in, size
 // Esegue la decriptatura con chiave privata
 // Ritorna TRUE / FALSE
 //
-static int doDecrypt(EVP_PKEY *privateKey, const unsigned char *in, size_t in_len,
+int doDecrypt(EVP_PKEY *privateKey, const unsigned char *in, size_t in_len,
                       unsigned char **out, size_t *out_len) {
     return cryptoWithTimeout(doDecryptInternal, privateKey, in, in_len, out, out_len);
 }
@@ -390,7 +390,7 @@ static int doEncryptInternal(EVP_PKEY *publicKey, const unsigned char *in, size_
 // Esegue la criptatura con chiave pubblica
 // Return TRUE/FALSE
 //
-static int doEncrypt(EVP_PKEY *publicKey, const unsigned char *in, size_t in_len,
+int doEncrypt(EVP_PKEY *publicKey, const unsigned char *in, size_t in_len,
                      unsigned char **out, size_t *out_len) {
     return cryptoWithTimeout(doEncryptInternal, publicKey, in, in_len, out, out_len);
 }

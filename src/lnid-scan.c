@@ -101,6 +101,7 @@ void decode_cmdline(int argc, char *argv[]) {
         }
         else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
             long mills = atoi(argv[i + 1]);
+            if (mills <= 0) mills = 100; // Default 100ms
             theTimeOutSec = (time_t)(mills / 1000);
             theTimeOutUSec = (useconds_t)((mills % 1000) * 1000);
             i++; // Salta l'argomento della porta
@@ -136,7 +137,8 @@ void decode_cmdline(int argc, char *argv[]) {
         exit(EXIT_FAILURE); // Error exit code
     }
     if(theTimeOutSec == 0 && theTimeOutUSec == 0) {
-        theTimeOutSec = TIMEOUT_SEC;
+        theTimeOutSec = 0;
+        theTimeOutUSec = 100000; // 100ms default
     }
 
     // Costruisce il valore della SubNet e della Maschera
@@ -224,7 +226,7 @@ void scan_subnet(const char *subnet, const char *mask, EVP_PKEY *pairKey)
         }
         
         // Invia la richiesta UDP a questo IP
-        if(sendUdpRequest(ip_string, theResponse, pairKey, theListeningPort,theMessage,isRSA) == TRUE) { // ok
+        if(sendUdpRequestWithTimeout(ip_string, theResponse, pairKey, theListeningPort,theMessage,isRSA, theTimeOutSec, theTimeOutUSec) == TRUE) { // ok
             fprintf(stdout,"%s %s\n",ip_string, theResponse);
         }
 

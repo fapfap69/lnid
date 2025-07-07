@@ -280,9 +280,7 @@ void creaIlSocket(int *sockfd, struct timeval *timeout,
         exit(EXIT_FAILURE);
     }
 
-    // Imposta il timeout per il socket
-    timeout->tv_sec = TIMEOUT_SEC;
-    timeout->tv_usec = TIMEOUT_USEC;
+    // Imposta il timeout per il socket (usa i valori passati)
     if (setsockopt(*sockfd, SOL_SOCKET, SO_RCVTIMEO, timeout, sizeof(*timeout)) < 0) {
         fprintf(stderr, "creaIlSocket() : Errore nell'impostazione del timeout !");
         close(*sockfd);
@@ -440,9 +438,6 @@ int txData(int sockfd, char *buffer, size_t *txlen, char *ip_address,
         toSentLen = *txlen;
     }
     sentLen = sendto(sockfd, txBuffer, toSentLen, 0, (const struct sockaddr *)(server_addr), sizeof(*server_addr));
-    if(sentLen <= 0) {
-        fprintf(stderr,"txData() : Errore di trasmissione %zd bytes in spedizione, 0 inviati!", sentLen);
-    }
     // valida l'uscita;
     *txlen = sentLen;
     if(isAllocated == TRUE) OPENSSL_free(decBuffer);
@@ -505,10 +500,11 @@ int clientKnock(int sockfd, char **rxtxBuffer, size_t *buferLen, char *theServer
     return(TRUE);
 }
 
-// Funzione per inviare una richiesta UDP a un dato IP e porta
+// Funzione per inviare una richiesta UDP con timeout configurabile
 //
-int sendUdpRequest(char *ip_address, char *response, EVP_PKEY *pairKey,
-                    int theListeningPort, char *theMessage, int isRSA) 
+int sendUdpRequestWithTimeout(char *ip_address, char *response, EVP_PKEY *pairKey,
+                    int theListeningPort, char *theMessage, int isRSA, 
+                    time_t timeout_sec, useconds_t timeout_usec)
 {
     // alloca il buffer
     char *buffer = malloc(BUFFER_SIZE);
@@ -524,6 +520,8 @@ int sendUdpRequest(char *ip_address, char *response, EVP_PKEY *pairKey,
     int sockfd;
     struct sockaddr_in server_addr;
     struct timeval timeout;
+    timeout.tv_sec = timeout_sec;
+    timeout.tv_usec = timeout_usec;
     creaIlSocket(&sockfd, &timeout, &server_addr, theListeningPort, ip_address);
 
     if(isRSA == 0) {
@@ -531,12 +529,10 @@ int sendUdpRequest(char *ip_address, char *response, EVP_PKEY *pairKey,
         if(isVerbose) fprintf(stdout,"sendUdpRequest() : Richesta del '%s' inviata a:%s:%d \n", theMessage, ip_address, theListeningPort);
         rxlen = strlen(theMessage);
         if(txData(sockfd, theMessage, &rxlen, ip_address, &server_addr, NULL) == FALSE) {
-            fprintf(stderr,"sendUdpRequest() : Errore di trasmissione !\n");
             ret = FALSE;
         } else {
             rxlen = BUFFER_SIZE; // massima dimensione in ricezione
             if(rxData(sockfd, &buffer, &rxlen, ip_address, NULL) == FALSE) {
-               fprintf(stderr,"sendUdpRequest() : Errore di ricezione !\n");
                ret = FALSE;
             }
         }
@@ -554,6 +550,14 @@ int sendUdpRequest(char *ip_address, char *response, EVP_PKEY *pairKey,
     free(buffer);
     close(sockfd);
     return(ret);
+}
+
+// Funzione per inviare una richiesta UDP a un dato IP e porta
+//
+int sendUdpRequest(char *ip_address, char *response, EVP_PKEY *pairKey,
+                    int theListeningPort, char *theMessage, int isRSA) 
+{
+    return sendUdpRequestWithTimeout(ip_address, response, pairKey, theListeningPort, theMessage, isRSA, 0, 100000);
 }
 
 #endif
