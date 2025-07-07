@@ -79,23 +79,41 @@ void decode_cmdline(int argc, char *argv[]) {
     // Elaborazione degli argomenti
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
-            strncpy(theKeyToSearch, argv[i + 1], 254); 
+            strncpy(theKeyToSearch, argv[i + 1], sizeof(theKeyToSearch) - 1);
+            theKeyToSearch[sizeof(theKeyToSearch) - 1] = '\0';
             i++; // Salta l'argomento dell'IP
         }
         else if (strcmp(argv[i], "-k") == 0 && i + 1 < argc) {
-            strncpy(theMessage, argv[i + 1], 25); 
+            // Validazione comando
+            if (strcmp(argv[i + 1], "ID") != 0 && strcmp(argv[i + 1], "MAC") != 0 && strcmp(argv[i + 1], "HOSTNAME") != 0) {
+                fprintf(stderr, "Errore: chiave deve essere ID, MAC o HOSTNAME\n");
+                exit(EXIT_FAILURE);
+            }
+            strncpy(theMessage, argv[i + 1], sizeof(theMesBuf) - 1);
+            theMessage[sizeof(theMesBuf) - 1] = '\0';
             i++; // Salta l'argomento dell'IP
         }
         else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
-            strncpy(theSubNet, argv[i + 1], 49); 
+            strncpy(theSubNet, argv[i + 1], sizeof(theSubNet) - 1);
+            theSubNet[sizeof(theSubNet) - 1] = '\0';
             i++; // Salta l'argomento dell'IP
         }
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
-            theListeningPort = atoi(argv[i + 1]);
+            int port = atoi(argv[i + 1]);
+            if (port <= 0 || port > 65535) {
+                fprintf(stderr, "Errore: porta deve essere tra 1 e 65535\n");
+                exit(EXIT_FAILURE);
+            }
+            theListeningPort = port;
             i++; // Salta l'argomento della porta
         }
         else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
-            theDelay = atoi(argv[i + 1]);
+            int delay = atoi(argv[i + 1]);
+            if (delay < 0 || delay > 10000) {
+                fprintf(stderr, "Errore: delay deve essere tra 0 e 10000 ms\n");
+                exit(EXIT_FAILURE);
+            }
+            theDelay = delay;
             i++; // Salta l'argomento della porta
         }
         else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {

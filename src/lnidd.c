@@ -88,11 +88,17 @@ void decode_cmdline(int argc, char *argv[]) {
     // Elaborazione degli argomenti
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
-            theListeningPort = atoi(argv[i + 1]);
+            int port = atoi(argv[i + 1]);
+            if (port <= 0 || port > 65535) {
+                fprintf(stderr, "Errore: porta deve essere tra 1 e 65535\n");
+                exit(EXIT_FAILURE);
+            }
+            theListeningPort = port;
             i++; // Salta l'argomento della porta
         }
         else if (strcmp(argv[i], "-e") == 0 && i + 1 < argc) {
-            strncpy(theEthernetMAC, argv[i + 1], 49);
+            strncpy(theEthernetMAC, argv[i + 1], sizeof(theEthernetMAC) - 1);
+            theEthernetMAC[sizeof(theEthernetMAC) - 1] = '\0';
             i++; // Salta l'argomento della porta
         }
         else if (strcmp(argv[i], "-c") == 0) {
@@ -131,13 +137,17 @@ void decode_cmdline(int argc, char *argv[]) {
 
 void buildTheResponse(char *message) {
     if (strcmp(message, "ID") == 0) {
-        strcpy(message, get_unique_id());
+        strncpy(message, get_unique_id(), BUFFER_SIZE - 1);
+        message[BUFFER_SIZE - 1] = '\0';
     } else if (strcmp(message, "MAC") == 0) {
-        strcpy(message, get_macaddr_id(theEthernetMAC));
+        strncpy(message, get_macaddr_id(theEthernetMAC), BUFFER_SIZE - 1);
+        message[BUFFER_SIZE - 1] = '\0';
     } else if (strcmp(message, "HOSTNAME") == 0) {
-        strcpy(message, get_hostname());
+        strncpy(message, get_hostname(), BUFFER_SIZE - 1);
+        message[BUFFER_SIZE - 1] = '\0';
     } else {
-        strcpy(message, "Comando non riconosciuto");
+        strncpy(message, "Comando non riconosciuto", BUFFER_SIZE - 1);
+        message[BUFFER_SIZE - 1] = '\0';
     }
     return;
 }

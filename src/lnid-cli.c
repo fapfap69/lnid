@@ -69,11 +69,22 @@ void decode_cmdline(int argc, char *argv[]) {
     // Elaborazione degli argomenti
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
+            // Validazione IP address
+            struct sockaddr_in sa;
+            if (inet_pton(AF_INET, argv[i+1], &(sa.sin_addr)) != 1) {
+                fprintf(stderr, "Errore: indirizzo IP non valido: %s\n", argv[i+1]);
+                exit(EXIT_FAILURE);
+            }
             theServerIp = argv[i+1];
             i++; // Salta l'argomento dell'IP
         }
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
-            theListeningPort = atoi(argv[i + 1]);
+            int port = atoi(argv[i + 1]);
+            if (port <= 0 || port > 65535) {
+                fprintf(stderr, "Errore: porta deve essere tra 1 e 65535\n");
+                exit(EXIT_FAILURE);
+            }
+            theListeningPort = port;
             i++; // Salta l'argomento della porta
         }
         else if (strcmp(argv[i], "-v") == 0) {
@@ -83,10 +94,12 @@ void decode_cmdline(int argc, char *argv[]) {
             isRSA = 1;
         }
         else if (strcmp(argv[i], "-d") == 0) {
-            strcpy(theMessage,"ID");
+            strncpy(theMessage, "ID", sizeof(theMesBuf) - 1);
+            theMessage[sizeof(theMesBuf) - 1] = '\0';
         }
         else if (strcmp(argv[i], "-m") == 0) {
-            strcpy(theMessage,"MAC");
+            strncpy(theMessage, "MAC", sizeof(theMesBuf) - 1);
+            theMessage[sizeof(theMesBuf) - 1] = '\0';
         }
         else if (strcmp(argv[i], "-h") == 0) {
             print_usage();

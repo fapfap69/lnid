@@ -89,7 +89,8 @@ void dump_sockaddr_in(const struct sockaddr_in *addr)
 char* get_hostname() 
 {
     static char hostname[256];
-    if (gethostname(hostname, sizeof(hostname)) == 0) {
+    if (gethostname(hostname, sizeof(hostname) - 1) == 0) {
+        hostname[sizeof(hostname) - 1] = '\0'; // Assicura terminazione
         return hostname;
     } else {
         fprintf(stderr, "get_hostname() : errore ! ");
@@ -102,7 +103,13 @@ char* get_hostname()
 char* get_unique_id() 
 {
     static char id[256];
-    snprintf(id, sizeof(id), "ID-%d", getpid()); // Utilizza il PID come ID
+    pid_t pid = getpid();
+    if (pid > 0) {
+        snprintf(id, sizeof(id), "ID-%d", pid);
+    } else {
+        strncpy(id, "ID-Unknown", sizeof(id) - 1);
+        id[sizeof(id) - 1] = '\0';
+    }
     return id;
 }
 
@@ -256,6 +263,16 @@ void creaIlSocket(int *sockfd, struct timeval *timeout,
                     struct sockaddr_in *server_addr, 
                     int theListeningPort, const char *theServerIp ) 
 {
+    // Validazione parametri
+    if (theListeningPort <= 0 || theListeningPort > 65535) {
+        fprintf(stderr, "creaIlSocket() : porta non valida: %d\n", theListeningPort);
+        exit(EXIT_FAILURE);
+    }
+    if (theServerIp == NULL) {
+        fprintf(stderr, "creaIlSocket() : IP server nullo\n");
+        exit(EXIT_FAILURE);
+    }
+
     // Creazione del socket UDP
     if ((*sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         fprintf(stderr, "creaIlSocket() : errore nella creazione del socket !");
@@ -275,7 +292,14 @@ void creaIlSocket(int *sockfd, struct timeval *timeout,
     memset(server_addr, 0, sizeof(*server_addr));
     server_addr->sin_family = AF_INET;
     server_addr->sin_port = htons(theListeningPort);
-    server_addr->sin_addr.s_addr = inet_addr(theServerIp);
+    
+    // Validazione e conversione IP
+    if (inet_pton(AF_INET, theServerIp, &server_addr->sin_addr) != 1) {
+        fprintf(stderr, "creaIlSocket() : indirizzo IP non valido: %s\n", theServerIp);
+        close(*sockfd);
+        exit(EXIT_FAILURE);
+    }
+    
     if(isVerbose) fprintf(stdout,"Socket creato su %s:%d !\n",theServerIp,theListeningPort);
     return;
 }
@@ -285,6 +309,12 @@ void creaIlSocket(int *sockfd, struct timeval *timeout,
 void creaIlServerSocket(int *sockfd, struct sockaddr_in *server_addr, 
                         fd_set *read_fds, int theListeningPort ) 
 {
+    // Validazione porta
+    if (theListeningPort <= 0 || theListeningPort > 65535) {
+        fprintf(stderr, "creaIlServerSocket() : porta non valida: %d\n", theListeningPort);
+        exit(EXIT_FAILURE);
+    }
+
     // Creazione del socket UDP
     if ((*sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         fprintf(stderr, "creaIlServerSocket() : errore nella creazione del socket !");
@@ -299,13 +329,13 @@ void creaIlServerSocket(int *sockfd, struct sockaddr_in *server_addr,
 
     // Binding del socket all'indirizzo e alla porta
     if (bind(*sockfd, (const struct sockaddr*)server_addr, sizeof(*server_addr)) < 0) {
-        fprintf(stderr, "creaIlServerSocket() : errore nel binding della poorta !");
+        fprintf(stderr, "creaIlServerSocket() : errore nel binding della porta !");
         close(*sockfd);
         exit(EXIT_FAILURE);
     }
     FD_ZERO(read_fds);
     FD_SET(*sockfd, read_fds);
-    if(isVerbose) fprintf(stdout,"Server socket creato con successo : il ascolto sulla porta %d!\n", theListeningPort);
+    if(isVerbose) fprintf(stdout,"Server socket creato con successo : in ascolto sulla porta %d!\n", theListeningPort);
     return;
 }
 

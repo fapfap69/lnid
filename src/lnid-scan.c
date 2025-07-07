@@ -77,15 +77,26 @@ void decode_cmdline(int argc, char *argv[]) {
     // Elaborazione degli argomenti
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
-            strncpy(theSubNet, argv[i + 1], 49); 
+            strncpy(theSubNet, argv[i + 1], sizeof(theSubNet) - 1);
+            theSubNet[sizeof(theSubNet) - 1] = '\0';
             i++; // Salta l'argomento dell'IP
         }
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
-            theListeningPort = atoi(argv[i + 1]);
+            int port = atoi(argv[i + 1]);
+            if (port <= 0 || port > 65535) {
+                fprintf(stderr, "Errore: porta deve essere tra 1 e 65535\n");
+                exit(EXIT_FAILURE);
+            }
+            theListeningPort = port;
             i++; // Salta l'argomento della porta
         }
         else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
-            theDelay = atoi(argv[i + 1]);
+            int delay = atoi(argv[i + 1]);
+            if (delay < 0 || delay > 10000) {
+                fprintf(stderr, "Errore: delay deve essere tra 0 e 10000 ms\n");
+                exit(EXIT_FAILURE);
+            }
+            theDelay = delay;
             i++; // Salta l'argomento della porta
         }
         else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
@@ -101,10 +112,12 @@ void decode_cmdline(int argc, char *argv[]) {
             isRSA = 1;
         }
         else if (strcmp(argv[i], "-d") == 0) {
-            strcpy(theMessage,"ID");
+            strncpy(theMessage, "ID", sizeof(theMesBuf) - 1);
+            theMessage[sizeof(theMesBuf) - 1] = '\0';
         }
         else if (strcmp(argv[i], "-m") == 0) {
-            strcpy(theMessage,"MAC");
+            strncpy(theMessage, "MAC", sizeof(theMesBuf) - 1);
+            theMessage[sizeof(theMesBuf) - 1] = '\0';
         }
         else if (strcmp(argv[i], "-h") == 0) {
             print_usage();
