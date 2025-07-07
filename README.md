@@ -29,6 +29,7 @@
       </ul>
     </li>
     <li><a href="#usage">Usage</a></li>
+    <li><a href="#configuration">Configuration</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
@@ -106,9 +107,9 @@ In order to install LNID
    ```sh
    make install
    ```
-5. On the LNID server you must run the service as deamon. This script works for a Linux distribution that uses **systemctl** program, with the exacutable in the **/usr/local/bin** directory
+5. On the LNID server you must run the service as daemon. This script works for a Linux distribution that uses **systemctl** program, with the executable in the **/usr/local/bin** directory
    ```sh
-   ./installaIlServizio.sh
+   sudo ./install-server.sh
    ```
 6. The client applications don't need installation
 
@@ -154,6 +155,146 @@ Runs as system daemon, automatically discovers hosts and updates /etc/hosts for 
    ```
 Manages LNID-discovered entries in the hosts file.
 
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+<!-- CONFIGURATION -->
+## Configuration
+
+LNID provides flexible configuration options for both server and resolver components through configuration files and command-line parameters.
+
+### Server Configuration
+
+The LNID server can be configured via `/etc/lnid-server.conf` file:
+
+```bash
+# LNID Server Configuration
+# Network interface to use
+ETHERNET=eth0
+
+# UDP listening port
+PORT=16969
+
+# Enable encrypted communication (0=no, 1=yes)
+ENCRYPTED=0
+
+# Enable secure mode - access control (0=no, 1=yes)
+SECURE_MODE=1
+
+# Enable verbose logging (0=no, 1=yes)
+VERBOSE=0
+```
+
+**Server Management:**
+```sh
+# View current configuration
+lnid-server config
+
+# Test server functionality
+lnid-server test
+
+# Control server service
+sudo lnid-server start|stop|restart
+
+# View server status
+lnid-server status
+```
+
+### Resolver Configuration
+
+The LNID resolver daemon can be configured via `/etc/lnid-resolver.conf` file:
+
+```bash
+# LNID Resolver Configuration
+# Subnet to scan (without .0 suffix)
+SUBNET=192.168.1
+
+# Scan interval in seconds (minimum 60)
+SCAN_INTERVAL=300
+
+# LNID server port
+PORT=16969
+
+# Enable encrypted communication (0=no, 1=yes)
+ENCRYPTED=0
+
+# Enable verbose logging (0=no, 1=yes)
+VERBOSE=0
+```
+
+**Resolver Management:**
+```sh
+# View discovered hosts
+lnid-hosts list
+
+# View resolver status
+lnid-hosts status
+
+# Clean LNID entries from /etc/hosts
+sudo lnid-hosts clean
+
+# Backup /etc/hosts
+sudo lnid-hosts backup
+```
+
+### Configuration Examples
+
+**Example 1: Basic LAN Setup**
+```bash
+# Server on 192.168.1.100
+ETHERNET=eth0
+PORT=16969
+SECURE_MODE=1
+
+# Resolver scanning 192.168.1.x network
+SUBNET=192.168.1
+SCAN_INTERVAL=300
+```
+
+**Example 2: Secure Multi-Network Setup**
+```bash
+# Server with encryption enabled
+ETHERNET=eth0
+PORT=16969
+ENCRYPTED=1
+SECURE_MODE=1
+VERBOSE=1
+
+# Resolver with encryption and frequent scans
+SUBNET=10.0.1
+SCAN_INTERVAL=120
+ENCRYPTED=1
+VERBOSE=1
+```
+
+**Example 3: Development Environment**
+```bash
+# Server in debug mode
+ETHERNET=lo
+PORT=17000
+SECURE_MODE=0
+VERBOSE=1
+
+# Resolver for testing
+SUBNET=127.0.0
+SCAN_INTERVAL=60
+VERBOSE=1
+```
+
+### Configuration Priority
+
+1. **Command-line parameters** (highest priority)
+2. **Configuration files** (`/etc/lnid-*.conf`)
+3. **Default values** (lowest priority)
+
+### Network Security
+
+When `SECURE_MODE=1` (default), the server restricts sensitive information access to:
+- Localhost (127.0.0.0/8)
+- Private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+
+Public IP addresses receive limited information for security.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
