@@ -135,20 +135,6 @@ void cleanupRateLimitTable() {
     rate_limit_entries = write_idx;
 }
 
-// Variabili Globali
-extern int isVerbose;
-
-int theListeningPort = DEFAULT_PORT;
-char theEthernetMAC[50] = "eth0";
-char theCustomHostname[256] = ""; // Hostname personalizzato (vuoto = usa sistema)
-
-int isRSA = 0; // Is the comunication RSA
-int isSecureMode = 1; // Modalità sicura attiva per default
-EVP_PKEY *privateKey = NULL;
-EVP_PKEY *publicKey = NULL;
-EVP_PKEY *pairKey = NULL;
-OSSL_LIB_CTX *osslLibCtx = NULL;
-
 // Funzione per stampare l'uso del programma
 void print_usage() {
     fprintf(stdout,"***  Local Network Identity Discovery Server  ***\n");
