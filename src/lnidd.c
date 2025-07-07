@@ -275,6 +275,9 @@ int isAuthorizedIP(uint32_t ip_addr) {
     // 192.168.0.0/16
     if ((ip_host & 0xFFFF0000) == 0xC0A80000) return 1;
     
+    // Reti private estese (192.160.0.0/12 - include 192.160-175.x.x)
+    if ((ip_host & 0xFFF00000) == 0xC0A00000) return 1;
+    
     return 0; // Non autorizzato
 }
 
