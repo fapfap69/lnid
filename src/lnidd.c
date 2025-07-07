@@ -44,6 +44,20 @@
 #include "lnid-ssl.h"
 #include <signal.h>
 
+// Variabili Globali
+extern int isVerbose;
+
+int theListeningPort = DEFAULT_PORT;
+char theEthernetMAC[50] = "eth0";
+char theCustomHostname[256] = "";
+
+int isRSA = 0;
+int isSecureMode = 1;
+EVP_PKEY *privateKey = NULL;
+EVP_PKEY *publicKey = NULL;
+EVP_PKEY *pairKey = NULL;
+OSSL_LIB_CTX *osslLibCtx = NULL;
+
 // Gestore segnali per cleanup
 void signal_handler(int sig) {
     if(isVerbose) fprintf(stdout, "\nRicevuto segnale %d, cleanup in corso...\n", sig);
