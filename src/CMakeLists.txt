@@ -22,6 +22,8 @@ set(SOURCES
     lnid-cli.c
     lnid-scan.c
     lnid-search.c
+    lnid-resolver.c
+    lnid-hosts.c
 )
 
 # Aggiungi i target eseguibili e collega le librerie OpenSSL

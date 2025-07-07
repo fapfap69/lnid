@@ -68,6 +68,9 @@ OSSL v3.0 nedded !
 
 06/12/2024 - ver. 2.0 - SSL support, organization, memory allocation check, Cmake installation
 
+06/07/2025 - ver. 2.1 - Improve security 
+
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 <!-- GETTING STARTED -->
@@ -109,6 +112,12 @@ In order to install LNID
    ```
 6. The client applications don't need installation
 
+7. For automatic hostname resolution, install the resolver daemon:
+   ```sh
+   sudo ./install-resolver.sh
+   ```
+   This enables transparent access to LNID servers by hostname (e.g., `ssh myserver` instead of `ssh 192.168.1.100`)
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
@@ -133,6 +142,18 @@ the IP address for the subnet is mandatory, example: **192.168.1**
    ```
 the IP address for the subnet is mandatory, example: **192.168.1**
 
+**lnid-resolver** Automatic daemon that maintains /etc/hosts updated with discovered LNID servers.
+   ```sh
+    sudo ./lnid-resolver -s \<subnet\> -i \<interval\> -p \<porta\> -f -c -v -h
+   ```
+Runs as system daemon, automatically discovers hosts and updates /etc/hosts for transparent access.
+
+**lnid-hosts** Management tool for LNID entries in /etc/hosts.
+   ```sh
+    ./lnid-hosts <list|clean|backup|status>
+   ```
+Manages LNID-discovered entries in the hosts file.
+
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -142,8 +163,8 @@ the IP address for the subnet is mandatory, example: **192.168.1**
 
 - [x] Istallation
 - [x] SSL support
-- [ ] Compilation option with the OSSL 3.0 support 
-- [ ] Authentication
+- [x] Compilation option with the OSSL 3.0 support 
+- [x] Authentication
 - [ ] Extend to Windows platform
 - [ ] Translation in english
 - [ ] Fix
