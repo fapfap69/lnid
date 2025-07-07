@@ -64,6 +64,7 @@ typedef struct {
     socklen_t addr_len;
     int state;
     EVP_PKEY *pubKey;
+    time_t last_activity;  // Per timeout inattività
 } Client;
 
 // Variabili Globali
@@ -266,24 +267,67 @@ int main(int argc, char *argv[]) {
 
     Client clients[MAX_CLIENTS];
     int client_count = 0;
+    time_t last_cleanup = time(NULL);
 
     if(isVerbose) fprintf(stdout,"Server UDP in ascolto sulla porta %d...\n", theListeningPort);
     while (1) {
         temp_fds = read_fds;
+        
+        // Imposta timeout per select
+        struct timeval select_timeout;
+        select_timeout.tv_sec = 1;
+        select_timeout.tv_usec = 0;
+        
         // Attendi che ci sia attività su uno dei socket
-        int activity = select(max_fd + 1, &temp_fds, NULL, NULL, NULL);
+        int activity = select(max_fd + 1, &temp_fds, NULL, NULL, &select_timeout);
         if (activity < 0) {
             perror("Errore nella chiamata a select");
             break;
         }
+        
+        // Cleanup periodico ogni 30 secondi
+        time_t now = time(NULL);
+        if (now - last_cleanup > 30) {
+            cleanupRateLimitTable();
+            // Cleanup client inattivi
+            for (int i = 0; i < client_count; i++) {
+                if (clients[i].state != ST_DESTROY && 
+                    now - clients[i].last_activity > 300) { // 5 minuti
+                    if(clients[i].pubKey != NULL) {
+                        EVP_PKEY_free(clients[i].pubKey);
+                        clients[i].pubKey = NULL;
+                    }
+                    clients[i].state = ST_DESTROY;
+                    if(isVerbose) fprintf(stdout,"Client timeout: %s:%d\n", 
+                        inet_ntoa(clients[i].addr.sin_addr), ntohs(clients[i].addr.sin_port));
+                }
+            }
+            last_cleanup = now;
+        }
+        
+        // Se nessuna attività, continua il loop
+        if (activity == 0) continue;
         // Controlla il socket del server
         if (FD_ISSET(sockfd, &temp_fds)) {
             struct sockaddr_in client_addr;
             socklen_t client_len = sizeof(client_addr);
+            // Controllo rate limiting
+            if (!checkRateLimit(client_addr.sin_addr.s_addr)) {
+                if(isVerbose) fprintf(stdout,"Richiesta bloccata per rate limiting: %s:%d\n", 
+                    inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+                continue;
+            }
+            
             // Ricevi il messaggio dal client
             bytes_received = recvfrom(sockfd, buffer, BUFFER_SIZE - 1, 0, (struct sockaddr *)&client_addr, &client_len);
             if (bytes_received < 0) {
                 perror("Errore durante la ricezione");
+                continue;
+            }
+            
+            // Controllo dimensione minima/massima
+            if (bytes_received == 0 || bytes_received > BUFFER_SIZE - 1) {
+                if(isVerbose) fprintf(stdout,"Dimensione messaggio non valida: %zu\n", bytes_received);
                 continue;
             }
             if(isVerbose) {
@@ -312,10 +356,24 @@ int main(int argc, char *argv[]) {
                     clients[idx].addr = client_addr;
                     clients[idx].addr_len = client_len;
                     clients[idx].state = (isRSA == 0) ? ST_NOOSSL : ST_ACCEPTED;
+                    clients[idx].last_activity = time(NULL);
+                    clients[idx].pubKey = NULL;
                     if(freeSlot == -1) client_count++;
                     if(isVerbose) fprintf(stdout,"Nuovo client aggiunto: %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+                } else {
+                    if(isVerbose) fprintf(stdout,"Troppi client connessi, richiesta ignorata\n");
+                    continue;
                 }
+            } else {
+                // Aggiorna attività client esistente
+                clients[idx].last_activity = time(NULL);
             }
+            // Controllo stato client valido
+            if (clients[idx].state == ST_DESTROY) {
+                if(isVerbose) fprintf(stdout,"Messaggio ignorato da client in stato DESTROY\n");
+                continue;
+            }
+            
             // Gestisci il messaggio : buffer In/out !
             handleClientMessage(&clients[idx], buffer, &bytes_received);
 //printf(">>>>>> %lu\n\n",bytes_received);

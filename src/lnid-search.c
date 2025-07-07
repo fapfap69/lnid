@@ -189,6 +189,10 @@ void decode_cmdline(int argc, char *argv[]) {
 // Funzione per generare gli indirizzi IP in una sottorete
 void scan_subnet(const char *subnet, const char *mask, EVP_PKEY *pairKey)
  {
+    static int requests_sent = 0;
+    const int MAX_SEARCH_REQUESTS = 500; // Limite più basso per search
+    time_t scan_start = time(NULL);
+    
     // Crea gli indirzzi
     struct in_addr subnet_addr, mask_addr;
     inet_pton(AF_INET, subnet, &subnet_addr);
@@ -197,6 +201,14 @@ void scan_subnet(const char *subnet, const char *mask, EVP_PKEY *pairKey)
     // Maschera inversa per ottenere la gamma degli IP
     unsigned int start_ip = ntohl(subnet_addr.s_addr) & ntohl(mask_addr.s_addr);
     unsigned int end_ip = start_ip | ~ntohl(mask_addr.s_addr);
+    
+    // Controllo dimensione search
+    unsigned int total_ips = end_ip - start_ip - 1;
+    if (total_ips > MAX_SEARCH_REQUESTS) {
+        fprintf(stderr, "Ricerca troppo ampia (%u IPs), limitata a %d\n", total_ips, MAX_SEARCH_REQUESTS);
+        end_ip = start_ip + MAX_SEARCH_REQUESTS + 1;
+    }
+    
     if(isVerbose) fprintf(stdout,"Scansione della sottorete %s con maschera %s...\n", subnet, mask);
 
     // Scansione della gamma di indirizzi IP
@@ -207,6 +219,19 @@ void scan_subnet(const char *subnet, const char *mask, EVP_PKEY *pairKey)
         char ip_string[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &ip_addr, ip_string, INET_ADDRSTRLEN);
 
+        // Controllo limite richieste
+        requests_sent++;
+        if (requests_sent > MAX_SEARCH_REQUESTS) {
+            if(isVerbose) fprintf(stdout,"Limite richieste raggiunto\n");
+            break;
+        }
+        
+        // Controllo timeout totale search (max 5 minuti)
+        if (time(NULL) - scan_start > 300) {
+            if(isVerbose) fprintf(stdout,"Timeout ricerca raggiunto\n");
+            break;
+        }
+        
         // Invia la richiesta UDP a questo IP
         if(sendUdpRequest(ip_string, theResponse, pairKey, theListeningPort,theMessage,isRSA) == TRUE) { // ok
             int exitus = strcmp(theResponse, theKeyToSearch);
@@ -215,8 +240,10 @@ void scan_subnet(const char *subnet, const char *mask, EVP_PKEY *pairKey)
                 exit(EXIT_SUCCESS);
             }
         }
-        // Inserisce un delay 
-        usleep(theDelay * 1000);
+        
+        // Inserisce un delay minimo per evitare flooding
+        int min_delay = (theDelay < 20) ? 20 : theDelay;
+        usleep(min_delay * 1000);
     }
     return;
 }

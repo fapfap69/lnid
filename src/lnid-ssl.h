@@ -316,10 +316,38 @@ cleanup:
     return ret;
 }
 
+// Funzione con timeout per operazioni crittografiche
+static int cryptoWithTimeout(int (*crypto_func)(EVP_PKEY*, const unsigned char*, size_t, unsigned char**, size_t*),
+                            EVP_PKEY *key, const unsigned char *in, size_t in_len,
+                            unsigned char **out, size_t *out_len) {
+    time_t start_time = time(NULL);
+    int result = crypto_func(key, in, in_len, out, out_len);
+    time_t end_time = time(NULL);
+    
+    if (end_time - start_time > CRYPTO_TIMEOUT_SEC) {
+        if(isVerbose) fprintf(stderr, "Timeout operazione crittografica: %ld secondi\n", end_time - start_time);
+        if (*out) {
+            OPENSSL_free(*out);
+            *out = NULL;
+        }
+        return FALSE;
+    }
+    return result;
+}
+
+// Wrapper per decrypt con timeout
+static int doDecryptInternal(EVP_PKEY *privateKey, const unsigned char *in, size_t in_len,
+                            unsigned char **out, size_t *out_len);
+
 // Esegue la decriptatura con chiave privata
 // Ritorna TRUE / FALSE
 //
 static int doDecrypt(EVP_PKEY *privateKey, const unsigned char *in, size_t in_len,
+                      unsigned char **out, size_t *out_len) {
+    return cryptoWithTimeout(doDecryptInternal, privateKey, in, in_len, out, out_len);
+}
+
+static int doDecryptInternal(EVP_PKEY *privateKey, const unsigned char *in, size_t in_len,
                       unsigned char **out, size_t *out_len)
 {
     EVP_PKEY_CTX* dec_ctx = EVP_PKEY_CTX_new(privateKey, NULL);
@@ -355,10 +383,19 @@ static int doDecrypt(EVP_PKEY *privateKey, const unsigned char *in, size_t in_le
     return(TRUE);
 }
 
+// Wrapper per encrypt con timeout
+static int doEncryptInternal(EVP_PKEY *publicKey, const unsigned char *in, size_t in_len,
+                            unsigned char **out, size_t *out_len);
+
 // Esegue la criptatura con chiave pubblica
 // Return TRUE/FALSE
 //
 static int doEncrypt(EVP_PKEY *publicKey, const unsigned char *in, size_t in_len,
+                     unsigned char **out, size_t *out_len) {
+    return cryptoWithTimeout(doEncryptInternal, publicKey, in, in_len, out, out_len);
+}
+
+static int doEncryptInternal(EVP_PKEY *publicKey, const unsigned char *in, size_t in_len,
                      unsigned char **out, size_t *out_len)
 {
     // Crea un nuovo contesto per criptare.
