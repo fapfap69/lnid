@@ -85,7 +85,7 @@ typedef struct {
 } Client;
 
 // Rate limiting per DoS protection  
-#define MAX_REQUESTS_PER_IP 50  // Aumentato per supportare protocollo SSL
+#define MAX_REQUESTS_PER_IP 10  // Aumentato per supportare protocollo SSL
 #define RATE_LIMIT_WINDOW 60
 
 typedef struct {
@@ -582,13 +582,6 @@ int main(int argc, char *argv[]) {
                 continue;
             }
             
-            // Controllo rate limiting DOPO aver ricevuto il messaggio
-            if (!checkRateLimit(client_addr.sin_addr.s_addr)) {
-                if(isVerbose) fprintf(stdout,"Richiesta bloccata per rate limiting: %s:%d\n", 
-                    inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
-                continue;
-            }
-            
             // Controllo dimensione minima/massima
             if (bytes_received == 0 || bytes_received > BUFFER_SIZE - 1) {
                 if(isVerbose) fprintf(stdout,"Dimensione messaggio non valida: %zu\n", bytes_received);
@@ -615,6 +608,13 @@ int main(int argc, char *argv[]) {
             }
             // Aggiungi il nuovo client se non è noto
             if (!client_found) {
+                // Controllo rate limiting SOLO per nuovi client
+                if (!checkRateLimit(client_addr.sin_addr.s_addr)) {
+                    if(isVerbose) fprintf(stdout,"Nuovo client bloccato per rate limiting: %s:%d\n", 
+                        inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+                    continue;
+                }
+                
                 idx = (freeSlot > -1) ? freeSlot : client_count;
                 if(idx < MAX_CLIENTS) {
                     clients[idx].addr = client_addr;
