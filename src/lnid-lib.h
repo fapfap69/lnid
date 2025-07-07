@@ -30,12 +30,16 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <sys/ioctl.h>
 #include <netdb.h>
 #include <errno.h>
 #include <sys/select.h>
-#include <net/if.h>
 #include <time.h>
+#include <net/if.h>
+#include <sys/ioctl.h>
+
+#ifdef __linux__
+#include <linux/if.h>
+#endif
 
 #if defined(__APPLE__)
 #include <ifaddrs.h>
