@@ -444,31 +444,41 @@ void handleClientMessage(Client *client, char *message, size_t *bytes_received )
 
     switch(client->state) {
         case ST_ACCEPTED: // Abbiamo ricevuto una chiave pubblica
+            if(isVerbose) fprintf(stdout, "ST_ACCEPTED: Ricevuta chiave pubblica (%zu bytes)\n", *bytes_received);
+            
             // Crea file temporaneo sicuro per chiave client
             if (clientKeyFile[0] == '\0') {
                 char template_path[256];
                 int fd = createSecureTempFile(template_path, clientKeyFile, sizeof(clientKeyFile));
-                if (fd == -1) { client->state = ST_DESTROY; return; }
+                if (fd == -1) { 
+                    if(isVerbose) fprintf(stderr, "Errore creazione file temporaneo\n");
+                    client->state = ST_DESTROY; 
+                    return; 
+                }
                 close(fd);
             }
             if(writeAllFile(clientKeyFile, message, *bytes_received) == FALSE) { 
+                if(isVerbose) fprintf(stderr, "Errore scrittura chiave client\n");
                 client->state = ST_DESTROY; 
                 return; 
             }
             client->pubKey = loadKeyFromPEM(osslLibCtx, clientKeyFile, passw);
             unlink(clientKeyFile); // Rimuovi subito dopo l'uso
             if(client->pubKey == NULL) { 
+                if(isVerbose) fprintf(stderr, "Errore caricamento chiave pubblica client\n");
                 client->state = ST_DESTROY; 
                 return; 
             }
+            if(isVerbose) fprintf(stdout, "Chiave pubblica client caricata con successo\n");
             // Invia la chiave pubblica del server al client
             char *server_key_buffer = message; // Usa il buffer esistente
             size_t server_key_size = BUFFER_SIZE;
             if(readAllFile(PUBKEYFILES, &server_key_buffer, &server_key_size) == FALSE) {
-                if(isVerbose) fprintf(stderr, "Errore lettura chiave pubblica server\n");
+                if(isVerbose) fprintf(stderr, "Errore lettura chiave pubblica server da %s\n", PUBKEYFILES);
                 client->state = ST_DESTROY;
                 return; 
             }
+            if(isVerbose) fprintf(stdout, "Invio chiave pubblica server (%zu bytes)\n", server_key_size);
             *bytes_received = server_key_size;
             client->state = ST_SSLHANDSHAKE;
             break;

@@ -43,6 +43,12 @@ if [ ! -f "$EXEC_PATH" ]; then
     error_exit "Errore: il programma $EXEC_PATH non esiste!"
 fi
 
+# Crea utente e gruppo lnid se non esistono
+if ! id "lnid" &>/dev/null; then
+    echo "Creazione utente lnid..."
+    useradd -r -s /bin/false -d /nonexistent lnid
+fi
+
 # Ottieni hostname corrente per default
 CURRENT_HOSTNAME=$(hostname)
 
@@ -91,14 +97,15 @@ ExecReload=/bin/kill -HUP \$MAINPID
 KillMode=process
 Restart=on-failure
 RestartSec=10
-User=nobody
-Group=nogroup
+User=lnid
+Group=lnid
 
 # Sicurezza
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
+PrivateDevices=true
 
 [Install]
 WantedBy=multi-user.target
