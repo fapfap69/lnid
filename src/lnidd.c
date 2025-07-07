@@ -84,8 +84,8 @@ typedef struct {
     time_t last_activity;  // Per timeout inattività
 } Client;
 
-// Rate limiting per DoS protection
-#define MAX_REQUESTS_PER_IP 10
+// Rate limiting per DoS protection  
+#define MAX_REQUESTS_PER_IP 50  // Aumentato per supportare protocollo SSL
 #define RATE_LIMIT_WINDOW 60
 
 typedef struct {
@@ -101,21 +101,28 @@ int rate_limit_entries = 0;
 int checkRateLimit(uint32_t ip_addr) {
     time_t now = time(NULL);
     
+    // Cerca IP esistente
     for (int i = 0; i < rate_limit_entries; i++) {
         if (rate_limit_table[i].ip_addr == ip_addr) {
+            // Se finestra temporale scaduta, resetta contatori
             if (now - rate_limit_table[i].first_request > RATE_LIMIT_WINDOW) {
                 rate_limit_table[i].first_request = now;
                 rate_limit_table[i].request_count = 1;
                 return TRUE;
             }
-            rate_limit_table[i].request_count++;
-            if (rate_limit_table[i].request_count > MAX_REQUESTS_PER_IP) {
+            // Controlla se supera il limite PRIMA di incrementare
+            if (rate_limit_table[i].request_count >= MAX_REQUESTS_PER_IP) {
+                if(isVerbose) fprintf(stdout, "Rate limit superato per IP: contatore=%d, limite=%d\n", 
+                    rate_limit_table[i].request_count, MAX_REQUESTS_PER_IP);
                 return FALSE;
             }
+            // Incrementa contatore
+            rate_limit_table[i].request_count++;
             return TRUE;
         }
     }
     
+    // Nuovo IP - aggiungi se c'è spazio
     if (rate_limit_entries < MAX_CLIENTS) {
         rate_limit_table[rate_limit_entries].ip_addr = ip_addr;
         rate_limit_table[rate_limit_entries].first_request = now;
@@ -124,6 +131,7 @@ int checkRateLimit(uint32_t ip_addr) {
         return TRUE;
     }
     
+    // Tabella piena - cerca slot scaduto da riutilizzare
     for (int i = 0; i < rate_limit_entries; i++) {
         if (now - rate_limit_table[i].first_request > RATE_LIMIT_WINDOW) {
             rate_limit_table[i].ip_addr = ip_addr;
@@ -133,6 +141,7 @@ int checkRateLimit(uint32_t ip_addr) {
         }
     }
     
+    // Tabella piena e nessun slot scaduto - rifiuta
     return FALSE;
 }
 
