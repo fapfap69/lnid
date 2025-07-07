@@ -50,6 +50,7 @@ extern int isVerbose;
 int theListeningPort = DEFAULT_PORT;
 char theEthernetMAC[50] = "eth0";
 char theCustomHostname[256] = "";
+char authorizedNetworks[1024] = ""; // Reti autorizzate personalizzate
 
 int isRSA = 0;
 int isSecureMode = 1;
@@ -165,8 +166,53 @@ void print_usage() {
     return;
 }
 
+// Legge configurazione da file
+void load_config_file() {
+    FILE *config = fopen("/etc/lnid-server.conf", "r");
+    if (!config) return; // File non trovato, usa default
+    
+    char line[256];
+    while (fgets(line, sizeof(line), config)) {
+        // Rimuovi commenti e spazi
+        char *comment = strchr(line, '#');
+        if (comment) *comment = '\0';
+        
+        // Parsing configurazione
+        if (strncmp(line, "PORT=", 5) == 0) {
+            int port = atoi(line + 5);
+            if (port > 0 && port <= 65535) theListeningPort = port;
+        }
+        else if (strncmp(line, "ETHERNET=", 9) == 0) {
+            sscanf(line + 9, "%49s", theEthernetMAC);
+        }
+        else if (strncmp(line, "HOSTNAME=", 9) == 0) {
+            sscanf(line + 9, "%255s", theCustomHostname);
+        }
+        else if (strncmp(line, "ENCRYPTED=", 10) == 0) {
+            isRSA = atoi(line + 10);
+        }
+        else if (strncmp(line, "SECURE_MODE=", 12) == 0) {
+            isSecureMode = atoi(line + 12);
+        }
+        else if (strncmp(line, "VERBOSE=", 8) == 0) {
+            isVerbose = atoi(line + 8);
+        }
+        else if (strncmp(line, "AUTHORIZED_NETWORKS=", 20) == 0) {
+            char *networks = line + 20;
+            // Rimuovi newline
+            char *newline = strchr(networks, '\n');
+            if (newline) *newline = '\0';
+            strncpy(authorizedNetworks, networks, sizeof(authorizedNetworks) - 1);
+            authorizedNetworks[sizeof(authorizedNetworks) - 1] = '\0';
+        }
+    }
+    fclose(config);
+}
+
 // Decodifica la command line e setta le variabili
 void decode_cmdline(int argc, char *argv[]) {
+    // Carica prima la configurazione da file
+    load_config_file();
  
     // Elaborazione degli argomenti
     for (int i = 1; i < argc; i++) {
@@ -224,6 +270,9 @@ void decode_cmdline(int argc, char *argv[]) {
         fprintf(stdout,"  Hostname: %s\n", theCustomHostname[0] ? theCustomHostname : "<sistema>");
         fprintf(stdout,"  Modalità cifrata %s\n", isRSA == 0 ? "disattivata" : "attivata" );
         fprintf(stdout,"  Modalità sicura %s\n", isSecureMode == 0 ? "disattivata" : "attivata" );
+        if (authorizedNetworks[0]) {
+            fprintf(stdout,"  Reti autorizzate: %s\n", authorizedNetworks);
+        }
         fprintf(stdout,"  Modalità verbose attivata\n");
     }
     return;
@@ -259,24 +308,46 @@ void check_hostname_at_startup() {
 
 // Controlla se l'IP è autorizzato per informazioni sensibili
 int isAuthorizedIP(uint32_t ip_addr) {
-    // Solo localhost e reti private sono autorizzate per default
     uint32_t ip_host = ntohl(ip_addr);
     
-    // Localhost (127.0.0.0/8)
+    // Localhost sempre autorizzato (127.0.0.0/8)
     if ((ip_host & 0xFF000000) == 0x7F000000) return 1;
     
-    // Reti private RFC 1918
+    // Controlla reti personalizzate se configurate
+    if (authorizedNetworks[0] != '\0') {
+        char networks[1024];
+        strncpy(networks, authorizedNetworks, sizeof(networks) - 1);
+        networks[sizeof(networks) - 1] = '\0';
+        
+        char *token = strtok(networks, ",; ");
+        while (token != NULL) {
+            char *slash = strchr(token, '/');
+            if (slash != NULL) {
+                *slash = '\0';
+                int prefix = atoi(slash + 1);
+                if (prefix > 0 && prefix <= 32) {
+                    struct in_addr net_addr;
+                    if (inet_aton(token, &net_addr)) {
+                        uint32_t net_host = ntohl(net_addr.s_addr);
+                        uint32_t mask = (0xFFFFFFFF << (32 - prefix));
+                        if ((ip_host & mask) == (net_host & mask)) {
+                            return 1;
+                        }
+                    }
+                }
+            }
+            token = strtok(NULL, ",; ");
+        }
+        return 0; // Se reti personalizzate configurate, solo quelle sono autorizzate
+    }
+    
+    // Reti private RFC 1918 (default se nessuna rete personalizzata)
     // 10.0.0.0/8
     if ((ip_host & 0xFF000000) == 0x0A000000) return 1;
-    
     // 172.16.0.0/12  
     if ((ip_host & 0xFFF00000) == 0xAC100000) return 1;
-    
     // 192.168.0.0/16
     if ((ip_host & 0xFFFF0000) == 0xC0A80000) return 1;
-    
-    // Reti private estese (192.160.0.0/12 - include 192.160-175.x.x)
-    if ((ip_host & 0xFFF00000) == 0xC0A00000) return 1;
     
     return 0; // Non autorizzato
 }

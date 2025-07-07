@@ -65,6 +65,11 @@ ENCRYPTED=0
 # Modalità sicura - controllo accesso (0=no, 1=si)
 SECURE_MODE=1
 
+# Reti autorizzate (formato CIDR, separate da virgola)
+# Se vuoto, usa reti private RFC 1918 di default
+# Esempio: 192.168.1.0/24,10.0.0.0/8,192.167.91.0/24
+AUTHORIZED_NETWORKS=
+
 # Modalità verbose (0=no, 1=si)
 VERBOSE=0
 EOL
@@ -81,7 +86,7 @@ Wants=network.target
 
 [Service]
 Type=simple
-ExecStart=/bin/bash -c 'source $CONFIG_FILE && $EXEC_PATH -e \$ETHERNET -p \$PORT \$([ -n "\$HOSTNAME" ] && echo "-n \$HOSTNAME") \$([ \$ENCRYPTED -eq 1 ] && echo "-c") \$([ \$SECURE_MODE -eq 0 ] && echo "-s") \$([ \$VERBOSE -eq 1 ] && echo "-v")'
+ExecStart=$EXEC_PATH
 ExecReload=/bin/kill -HUP \$MAINPID
 KillMode=process
 Restart=on-failure

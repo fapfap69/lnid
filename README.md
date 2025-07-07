@@ -185,6 +185,11 @@ ENCRYPTED=0
 # Enable secure mode - access control (0=no, 1=yes)
 SECURE_MODE=1
 
+# Authorized networks (CIDR format, comma separated)
+# If empty, uses RFC 1918 private networks by default
+# Example: 192.168.1.0/24,10.0.0.0/8,192.167.91.0/24
+AUTHORIZED_NETWORKS=
+
 # Enable verbose logging (0=no, 1=yes)
 VERBOSE=0
 ```
@@ -296,10 +301,20 @@ VERBOSE=1
 ### Network Security
 
 When `SECURE_MODE=1` (default), the server restricts sensitive information access to:
-- Localhost (127.0.0.0/8)
-- Private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+- Localhost (127.0.0.0/8) - always authorized
+- Authorized networks defined in `AUTHORIZED_NETWORKS`
+- If `AUTHORIZED_NETWORKS` is empty: RFC 1918 private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
 
-Public IP addresses receive limited information for security.
+Unauthorized IP addresses receive limited information for security.
+
+**Custom Network Authorization:**
+```bash
+# Example: Authorize specific subnets
+AUTHORIZED_NETWORKS=192.168.1.0/24,192.167.91.0/24,192.135.10.0/24
+
+# Example: Authorize entire class B network
+AUTHORIZED_NETWORKS=192.168.0.0/16,10.0.0.0/8
+```
 
 ### Hostname Conflicts Resolution
 
