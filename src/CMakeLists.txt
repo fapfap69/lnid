@@ -35,5 +35,10 @@ foreach(file ${SOURCES})
     target_include_directories(${target_name} PRIVATE ${CMAKE_SOURCE_DIR})
 endforeach()
 
+# Target di installazione
+install(TARGETS lnidd lnid-cli lnid-scan lnid-search lnid-resolver lnid-hosts lnid-server
+        DESTINATION /usr/local/bin
+        PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE)
+
 # Messaggio finale
 message(STATUS "Configurazione completata!")
