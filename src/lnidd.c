@@ -563,17 +563,18 @@ int main(int argc, char *argv[]) {
         if (FD_ISSET(sockfd, &temp_fds)) {
             struct sockaddr_in client_addr;
             socklen_t client_len = sizeof(client_addr);
-            // Controllo rate limiting
-            if (!checkRateLimit(client_addr.sin_addr.s_addr)) {
-                if(isVerbose) fprintf(stdout,"Richiesta bloccata per rate limiting: %s:%d\n", 
-                    inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
-                continue;
-            }
             
             // Ricevi il messaggio dal client
             bytes_received = recvfrom(sockfd, buffer, BUFFER_SIZE - 1, 0, (struct sockaddr *)&client_addr, &client_len);
             if (bytes_received < 0) {
                 perror("Errore durante la ricezione");
+                continue;
+            }
+            
+            // Controllo rate limiting DOPO aver ricevuto il messaggio
+            if (!checkRateLimit(client_addr.sin_addr.s_addr)) {
+                if(isVerbose) fprintf(stdout,"Richiesta bloccata per rate limiting: %s:%d\n", 
+                    inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
                 continue;
             }
             
