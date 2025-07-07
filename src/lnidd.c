@@ -74,6 +74,7 @@ int theListeningPort = DEFAULT_PORT;
 char theEthernetMAC[50] = "eth0";
 
 int isRSA = 0; // Is the comunication RSA
+int isSecureMode = 1; // Modalità sicura attiva per default
 EVP_PKEY *privateKey = NULL;
 EVP_PKEY *publicKey = NULL;
 EVP_PKEY *pairKey = NULL;
@@ -84,10 +85,11 @@ void print_usage() {
     fprintf(stdout,"***  Local Network Identity Discovery Server  ***\n");
     fprintf(stdout," Auth: A.Franco - INFN Bari Italy \n");
     fprintf(stdout," Date : 06/12/2024 -  Ver. 2.0    \n\n");
-    fprintf(stdout,"Utilizzo: lnidd -e <ethernet> -p <porta> -v -h\n");
+    fprintf(stdout,"Utilizzo: lnidd -e <ethernet> -p <porta> -c -s -v -h\n");
     fprintf(stdout,"  -e <ethernet>     : specifica la scheda ethernet da utilizzare  (default=eth0)\n");
     fprintf(stdout,"  -p <porta>        : specifica la porta da utilizzare  (default=16969)\n");
     fprintf(stdout,"  -c                : attiva la modalità cifrata\n");
+    fprintf(stdout,"  -s                : disattiva la modalità sicura (sconsigliato)\n");
     fprintf(stdout,"  -v                : attiva la modalità verbose\n");
     fprintf(stdout,"  -h                : visualizza l'help\n ");
     return;
@@ -115,6 +117,10 @@ void decode_cmdline(int argc, char *argv[]) {
         else if (strcmp(argv[i], "-c") == 0) {
             isRSA = 1;
         }
+        else if (strcmp(argv[i], "-s") == 0) {
+            isSecureMode = 0;
+            fprintf(stdout, "ATTENZIONE: Modalità sicura disattivata!\n");
+        }
         else if (strcmp(argv[i], "-v") == 0) {
             isVerbose = 1;
         }
@@ -141,20 +147,71 @@ void decode_cmdline(int argc, char *argv[]) {
         fprintf(stdout,"  Ethernet: %s\n", theEthernetMAC);
         fprintf(stdout,"  Porta: %d\n", theListeningPort);
         fprintf(stdout,"  Modalità cifrata %s\n", isRSA == 0 ? "disattivata" : "attivata" );
+        fprintf(stdout,"  Modalità sicura %s\n", isSecureMode == 0 ? "disattivata" : "attivata" );
         fprintf(stdout,"  Modalità verbose attivata\n");
     }
     return;
 } 
 
-void buildTheResponse(char *message) {
+// Controlla se l'IP è autorizzato per informazioni sensibili
+int isAuthorizedIP(uint32_t ip_addr) {
+    // Solo localhost e reti private sono autorizzate per default
+    uint32_t ip_host = ntohl(ip_addr);
+    
+    // Localhost (127.0.0.0/8)
+    if ((ip_host & 0xFF000000) == 0x7F000000) return 1;
+    
+    // Reti private RFC 1918
+    // 10.0.0.0/8
+    if ((ip_host & 0xFF000000) == 0x0A000000) return 1;
+    
+    // 172.16.0.0/12  
+    if ((ip_host & 0xFFF00000) == 0xAC100000) return 1;
+    
+    // 192.168.0.0/16
+    if ((ip_host & 0xFFFF0000) == 0xC0A80000) return 1;
+    
+    return 0; // Non autorizzato
+}
+
+void buildTheResponse(char *message, uint32_t client_ip) {
+    int is_authorized = isSecureMode ? isAuthorizedIP(client_ip) : 1; // Se sicurezza disattivata, tutti autorizzati
+    struct in_addr addr;
+    addr.s_addr = client_ip;
+    
     if (strcmp(message, "ID") == 0) {
-        strncpy(message, get_unique_id(), BUFFER_SIZE - 1);
+        if (is_authorized) {
+            strncpy(message, get_unique_id(), BUFFER_SIZE - 1);
+            if(isVerbose) fprintf(stdout, "ID fornito a client autorizzato: %s\n", inet_ntoa(addr));
+        } else {
+            strncpy(message, "Non autorizzato", BUFFER_SIZE - 1);
+            fprintf(stdout, "SECURITY: Tentativo accesso ID da IP non autorizzato: %s\n", inet_ntoa(addr));
+        }
         message[BUFFER_SIZE - 1] = '\0';
     } else if (strcmp(message, "MAC") == 0) {
-        strncpy(message, get_macaddr_id(theEthernetMAC), BUFFER_SIZE - 1);
+        if (is_authorized) {
+            strncpy(message, get_macaddr_id(theEthernetMAC), BUFFER_SIZE - 1);
+            if(isVerbose) fprintf(stdout, "MAC fornito a client autorizzato: %s\n", inet_ntoa(addr));
+        } else {
+            strncpy(message, "Non autorizzato", BUFFER_SIZE - 1);
+            fprintf(stdout, "SECURITY: Tentativo accesso MAC da IP non autorizzato: %s\n", inet_ntoa(addr));
+        }
         message[BUFFER_SIZE - 1] = '\0';
     } else if (strcmp(message, "HOSTNAME") == 0) {
-        strncpy(message, get_hostname(), BUFFER_SIZE - 1);
+        // HOSTNAME sempre disponibile per compatibilità, ma limitato
+        char* hostname = get_hostname();
+        if (is_authorized) {
+            strncpy(message, hostname, BUFFER_SIZE - 1);
+            if(isVerbose) fprintf(stdout, "HOSTNAME completo fornito a client autorizzato: %s\n", inet_ntoa(addr));
+        } else {
+            // Restituisce solo parte del hostname per client non autorizzati
+            char limited_hostname[64];
+            strncpy(limited_hostname, hostname, 8); // Solo primi 8 caratteri
+            limited_hostname[8] = '\0';
+            strncat(limited_hostname, "***", sizeof(limited_hostname) - strlen(limited_hostname) - 1);
+            strncpy(message, limited_hostname, BUFFER_SIZE - 1);
+            if(isVerbose) fprintf(stdout, "HOSTNAME limitato fornito a client non autorizzato: %s\n", inet_ntoa(addr));
+        }
         message[BUFFER_SIZE - 1] = '\0';
     } else {
         strncpy(message, "Comando non riconosciuto", BUFFER_SIZE - 1);
@@ -198,7 +255,7 @@ void handleClientMessage(Client *client, char *message, size_t *bytes_received )
             if(decr != NULL) memcpy(message, decr, lm); 
             message[lm] = '\0';
             OPENSSL_free(decr);
-            buildTheResponse(message); // compone la risposta
+            buildTheResponse(message, client->addr.sin_addr.s_addr); // compone la risposta
             // printf("=== pubblica client --\n");
             // dumpKeyPair(client->pubKey);
             doEncrypt(client->pubKey, (const unsigned char *)message, strlen(message), &decr, &lm); //cripta
@@ -221,7 +278,7 @@ void handleClientMessage(Client *client, char *message, size_t *bytes_received )
             break;
 
         case ST_NOOSSL: // Questo e' il comportamento semplice
-            buildTheResponse(message);
+            buildTheResponse(message, client->addr.sin_addr.s_addr);
             *bytes_received = strlen(message);
             break;
 
