@@ -431,12 +431,14 @@ void handleClientMessage(Client *client, char *message, size_t *bytes_received )
                 return; 
             }
             // Invia la chiave pubblica del server al client
-            *bytes_received = BUFFER_SIZE;
-            if(readAllFile(PUBKEYFILES, &message, bytes_received) == FALSE) {
+            char *server_key_buffer = message; // Usa il buffer esistente
+            size_t server_key_size = BUFFER_SIZE;
+            if(readAllFile(PUBKEYFILES, &server_key_buffer, &server_key_size) == FALSE) {
                 if(isVerbose) fprintf(stderr, "Errore lettura chiave pubblica server\n");
                 client->state = ST_DESTROY;
                 return; 
             }
+            *bytes_received = server_key_size;
             client->state = ST_SSLHANDSHAKE;
             break;
 
