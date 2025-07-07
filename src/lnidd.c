@@ -73,6 +73,7 @@ extern int isVerbose;
 
 int theListeningPort = DEFAULT_PORT;
 char theEthernetMAC[50] = "eth0";
+char theCustomHostname[256] = ""; // Hostname personalizzato (vuoto = usa sistema)
 
 int isRSA = 0; // Is the comunication RSA
 int isSecureMode = 1; // Modalità sicura attiva per default
@@ -86,9 +87,10 @@ void print_usage() {
     fprintf(stdout,"***  Local Network Identity Discovery Server  ***\n");
     fprintf(stdout," Auth: A.Franco - INFN Bari Italy \n");
     fprintf(stdout," Date : 06/12/2024 -  Ver. 2.0    \n\n");
-    fprintf(stdout,"Utilizzo: lnidd -e <ethernet> -p <porta> -c -s -v -h\n");
+    fprintf(stdout,"Utilizzo: lnidd -e <ethernet> -p <porta> -n <hostname> -c -s -v -h\n");
     fprintf(stdout,"  -e <ethernet>     : specifica la scheda ethernet da utilizzare  (default=eth0)\n");
     fprintf(stdout,"  -p <porta>        : specifica la porta da utilizzare  (default=16969)\n");
+    fprintf(stdout,"  -n <hostname>     : specifica hostname personalizzato (default=hostname sistema)\n");
     fprintf(stdout,"  -c                : attiva la modalità cifrata\n");
     fprintf(stdout,"  -s                : disattiva la modalità sicura (sconsigliato)\n");
     fprintf(stdout,"  -v                : attiva la modalità verbose\n");
@@ -114,6 +116,11 @@ void decode_cmdline(int argc, char *argv[]) {
             strncpy(theEthernetMAC, argv[i + 1], sizeof(theEthernetMAC) - 1);
             theEthernetMAC[sizeof(theEthernetMAC) - 1] = '\0';
             i++; // Salta l'argomento della porta
+        }
+        else if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
+            strncpy(theCustomHostname, argv[i + 1], sizeof(theCustomHostname) - 1);
+            theCustomHostname[sizeof(theCustomHostname) - 1] = '\0';
+            i++; // Salta l'argomento hostname
         }
         else if (strcmp(argv[i], "-c") == 0) {
             isRSA = 1;
@@ -147,12 +154,41 @@ void decode_cmdline(int argc, char *argv[]) {
         fprintf(stdout,"Configurazione:\n");
         fprintf(stdout,"  Ethernet: %s\n", theEthernetMAC);
         fprintf(stdout,"  Porta: %d\n", theListeningPort);
+        fprintf(stdout,"  Hostname: %s\n", theCustomHostname[0] ? theCustomHostname : "<sistema>");
         fprintf(stdout,"  Modalità cifrata %s\n", isRSA == 0 ? "disattivata" : "attivata" );
         fprintf(stdout,"  Modalità sicura %s\n", isSecureMode == 0 ? "disattivata" : "attivata" );
         fprintf(stdout,"  Modalità verbose attivata\n");
     }
     return;
 } 
+
+// Controllo conflitti DNS all'avvio
+void check_hostname_at_startup() {
+    // Se hostname non configurato, usa quello di sistema
+    if (theCustomHostname[0] == '\0') {
+        char* system_hostname = get_hostname();
+        strncpy(theCustomHostname, system_hostname, sizeof(theCustomHostname) - 1);
+        theCustomHostname[sizeof(theCustomHostname) - 1] = '\0';
+    }
+    
+    // Controllo conflitto DNS semplice
+    struct hostent *he = gethostbyname(theCustomHostname);
+    if (he != NULL) {
+        char original[256];
+        strncpy(original, theCustomHostname, sizeof(original) - 1);
+        original[sizeof(original) - 1] = '\0';
+        
+        snprintf(theCustomHostname, sizeof(theCustomHostname), "%s-lnid", original);
+        
+        if(isVerbose) {
+            fprintf(stdout, "DNS conflict detected: %s -> %s\n", original, theCustomHostname);
+        }
+    }
+    
+    if(isVerbose) {
+        fprintf(stdout, "Server hostname: %s\n", theCustomHostname);
+    }
+}
 
 // Controlla se l'IP è autorizzato per informazioni sensibili
 int isAuthorizedIP(uint32_t ip_addr) {
@@ -199,8 +235,8 @@ void buildTheResponse(char *message, uint32_t client_ip) {
         }
         message[BUFFER_SIZE - 1] = '\0';
     } else if (strcmp(message, "HOSTNAME") == 0) {
-        // HOSTNAME sempre disponibile per compatibilità, ma limitato
-        char* hostname = get_hostname();
+        // Usa hostname personalizzato se configurato, altrimenti quello di sistema
+        char* hostname = theCustomHostname[0] ? theCustomHostname : get_hostname();
         if (is_authorized) {
             strncpy(message, hostname, BUFFER_SIZE - 1);
             if(isVerbose) fprintf(stdout, "HOSTNAME completo fornito a client autorizzato: %s\n", inet_ntoa(addr));
@@ -300,6 +336,9 @@ int main(int argc, char *argv[]) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
+    // Controllo hostname e conflitti DNS
+    check_hostname_at_startup();
+    
     // Set up per la cifratura
     if(isRSA) {
         char *passphrase = NULL;

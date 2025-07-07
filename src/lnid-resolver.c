@@ -163,14 +163,46 @@ int update_hosts_file() {
     return 1;
 }
 
-// Aggiunge/aggiorna entry nella cache
+// Genera hostname unico per conflitti LNID multipli
+void make_unique_lnid_hostname(char *hostname, const char *original, const char *ip) {
+    // Estrae ultimo ottetto IP per suffisso
+    const char *last_dot = strrchr(ip, '.');
+    if (last_dot) {
+        snprintf(hostname, 256, "%s-lnid%s", original, last_dot + 1);
+    } else {
+        snprintf(hostname, 256, "%s-lnid", original);
+    }
+}
+
+// Aggiunge/aggiorna entry nella cache (solo conflitti LNID)
 void update_cache_entry(const char *ip, const char *hostname) {
     time_t now = time(NULL);
+    char final_hostname[256];
+    int has_lnid_conflict = 0;
     
-    // Cerca entry esistente
+    // Cerca conflitti con altri server LNID (stesso hostname, IP diverso)
     for (int i = 0; i < cacheSize; i++) {
-        if (strcmp(hostCache[i].hostname, hostname) == 0) {
-            strncpy(hostCache[i].ip, ip, sizeof(hostCache[i].ip) - 1);
+        if (strcmp(hostCache[i].hostname, hostname) == 0 && 
+            strcmp(hostCache[i].ip, ip) != 0 && 
+            hostCache[i].active) {
+            has_lnid_conflict = 1;
+            break;
+        }
+    }
+    
+    // Risolvi conflitti LNID generando hostname unico
+    if (has_lnid_conflict) {
+        make_unique_lnid_hostname(final_hostname, hostname, ip);
+        if(isVerbose) fprintf(stdout, "LNID conflict resolved: %s -> %s\n", hostname, final_hostname);
+    } else {
+        strncpy(final_hostname, hostname, sizeof(final_hostname) - 1);
+        final_hostname[sizeof(final_hostname) - 1] = '\0';
+    }
+    
+    // Cerca entry esistente per questo IP
+    for (int i = 0; i < cacheSize; i++) {
+        if (strcmp(hostCache[i].ip, ip) == 0) {
+            strncpy(hostCache[i].hostname, final_hostname, sizeof(hostCache[i].hostname) - 1);
             hostCache[i].last_seen = now;
             hostCache[i].active = 1;
             return;
@@ -179,12 +211,12 @@ void update_cache_entry(const char *ip, const char *hostname) {
     
     // Aggiungi nuova entry se c'è spazio
     if (cacheSize < MAX_ENTRIES) {
-        strncpy(hostCache[cacheSize].hostname, hostname, sizeof(hostCache[cacheSize].hostname) - 1);
+        strncpy(hostCache[cacheSize].hostname, final_hostname, sizeof(hostCache[cacheSize].hostname) - 1);
         strncpy(hostCache[cacheSize].ip, ip, sizeof(hostCache[cacheSize].ip) - 1);
         hostCache[cacheSize].last_seen = now;
         hostCache[cacheSize].active = 1;
         cacheSize++;
-        if(isVerbose) fprintf(stdout, "Nuovo host scoperto: %s -> %s\n", hostname, ip);
+        if(isVerbose) fprintf(stdout, "New host discovered: %s -> %s\n", final_hostname, ip);
     }
 }
 

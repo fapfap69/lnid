@@ -176,6 +176,9 @@ ETHERNET=eth0
 # UDP listening port
 PORT=16969
 
+# Custom hostname (empty = use system hostname)
+HOSTNAME=myserver
+
 # Enable encrypted communication (0=no, 1=yes)
 ENCRYPTED=0
 
@@ -245,6 +248,7 @@ sudo lnid-hosts backup
 # Server on 192.168.1.100
 ETHERNET=eth0
 PORT=16969
+HOSTNAME=webserver
 SECURE_MODE=1
 
 # Resolver scanning 192.168.1.x network
@@ -257,6 +261,7 @@ SCAN_INTERVAL=300
 # Server with encryption enabled
 ETHERNET=eth0
 PORT=16969
+HOSTNAME=secure-db
 ENCRYPTED=1
 SECURE_MODE=1
 VERBOSE=1
@@ -295,6 +300,44 @@ When `SECURE_MODE=1` (default), the server restricts sensitive information acces
 - Private networks (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
 
 Public IP addresses receive limited information for security.
+
+### Hostname Conflicts Resolution
+
+LNID uses a **hybrid approach** to handle hostname conflicts automatically:
+
+#### **Phase 1: Server Startup (DNS Conflicts)**
+Each LNID server checks for DNS conflicts when starting:
+- If hostname exists in DNS → appends `-lnid` suffix
+- Example: `webserver` (DNS) + `webserver` (LNID) → `webserver-lnid`
+- **Immediate resolution** - no waiting for discovery
+
+#### **Phase 2: Network Discovery (LNID Conflicts)**
+The resolver handles conflicts between multiple LNID servers:
+- Multiple servers with same hostname get unique IP-based suffixes
+- Example: `testbox-lnid` on .50 and .80 → `testbox-lnid50`, `testbox-lnid80`
+- **Global coordination** across the network
+
+#### **Conflict Resolution Examples:**
+
+**Scenario 1: DNS + LNID Conflict**
+```
+DNS: webserver → 192.168.1.10 (existing)
+LNID Server: webserver → webserver-lnid (at startup)
+Result: webserver-lnid → 192.168.1.100
+```
+
+**Scenario 2: Multiple LNID Servers**
+```
+Server A: testbox → testbox-lnid50 (192.168.1.50)
+Server B: testbox → testbox-lnid80 (192.168.1.80)
+Both accessible via unique names
+```
+
+**Best Practice**: Configure unique names to avoid conflicts:
+```bash
+# /etc/lnid-server.conf
+HOSTNAME=myapp-prod    # Unique, descriptive name
+```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

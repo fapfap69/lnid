@@ -43,6 +43,9 @@ if [ ! -f "$EXEC_PATH" ]; then
     error_exit "Errore: il programma $EXEC_PATH non esiste!"
 fi
 
+# Ottieni hostname corrente per default
+CURRENT_HOSTNAME=$(hostname)
+
 # Crea file di configurazione
 echo "Creazione file di configurazione..."
 cat > "$CONFIG_FILE" <<EOL
@@ -52,6 +55,9 @@ ETHERNET=eth0
 
 # Porta UDP di ascolto
 PORT=16969
+
+# Hostname personalizzato (vuoto = usa hostname sistema)
+HOSTNAME=$CURRENT_HOSTNAME
 
 # Modalità cifrata (0=no, 1=si)
 ENCRYPTED=0
@@ -75,7 +81,7 @@ Wants=network.target
 
 [Service]
 Type=simple
-ExecStart=/bin/bash -c 'source $CONFIG_FILE && $EXEC_PATH -e \$ETHERNET -p \$PORT \$([ \$ENCRYPTED -eq 1 ] && echo "-c") \$([ \$SECURE_MODE -eq 0 ] && echo "-s") \$([ \$VERBOSE -eq 1 ] && echo "-v")'
+ExecStart=/bin/bash -c 'source $CONFIG_FILE && $EXEC_PATH -e \$ETHERNET -p \$PORT \$([ -n "\$HOSTNAME" ] && echo "-n \$HOSTNAME") \$([ \$ENCRYPTED -eq 1 ] && echo "-c") \$([ \$SECURE_MODE -eq 0 ] && echo "-s") \$([ \$VERBOSE -eq 1 ] && echo "-v")'
 ExecReload=/bin/kill -HUP \$MAINPID
 KillMode=process
 Restart=on-failure
