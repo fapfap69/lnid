@@ -341,13 +341,22 @@ void handleClientMessage(Client *client, char *message, size_t *bytes_received )
                 if (fd == -1) { client->state = ST_DESTROY; return; }
                 close(fd);
             }
-            if(writeAllFile(clientKeyFile, message, *bytes_received) == FALSE) { exit(EXIT_FAILURE); }
+            if(writeAllFile(clientKeyFile, message, *bytes_received) == FALSE) { 
+                client->state = ST_DESTROY; 
+                return; 
+            }
             client->pubKey = loadKeyFromPEM(osslLibCtx, clientKeyFile, passw);
-            if(client->pubKey == NULL) { client->state = ST_DESTROY; return; }
-            *bytes_received = BUFFER_SIZE; // carica la dimensione massima del buffer pre allocato
-            if(readAllFile(PUBKEYFILES, &message, bytes_received) == FALSE) {  // nel buffer la chiave pubblica del server
+            unlink(clientKeyFile); // Rimuovi subito dopo l'uso
+            if(client->pubKey == NULL) { 
+                client->state = ST_DESTROY; 
+                return; 
+            }
+            // Invia la chiave pubblica del server al client
+            *bytes_received = BUFFER_SIZE;
+            if(readAllFile(PUBKEYFILES, &message, bytes_received) == FALSE) {
+                if(isVerbose) fprintf(stderr, "Errore lettura chiave pubblica server\n");
                 client->state = ST_DESTROY;
-                break; 
+                return; 
             }
             client->state = ST_SSLHANDSHAKE;
             break;
