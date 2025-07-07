@@ -50,6 +50,7 @@ extern int isVerbose;
 int theListeningPort = DEFAULT_PORT;
 char theEthernetMAC[50] = "eth0";
 char theCustomHostname[256] = "";
+char theOriginalHostname[256] = ""; // Hostname originale da restituire ai client
 char authorizedNetworks[1024] = ""; // Reti autorizzate personalizzate
 
 int isRSA = 0;
@@ -287,22 +288,26 @@ void check_hostname_at_startup() {
         theCustomHostname[sizeof(theCustomHostname) - 1] = '\0';
     }
     
+    // Salva l'hostname originale per i client
+    strncpy(theOriginalHostname, theCustomHostname, sizeof(theOriginalHostname) - 1);
+    theOriginalHostname[sizeof(theOriginalHostname) - 1] = '\0';
+    
     // Controllo conflitto DNS semplice
     struct hostent *he = gethostbyname(theCustomHostname);
     if (he != NULL) {
-        char original[256];
-        strncpy(original, theCustomHostname, sizeof(original) - 1);
-        original[sizeof(original) - 1] = '\0';
-        
-        snprintf(theCustomHostname, sizeof(theCustomHostname), "%s-lnid", original);
+        // Modifica solo il nome interno del server, non quello restituito
+        snprintf(theCustomHostname, sizeof(theCustomHostname), "%s-lnid", theOriginalHostname);
         
         if(isVerbose) {
-            fprintf(stdout, "DNS conflict detected: %s -> %s\n", original, theCustomHostname);
+            fprintf(stdout, "DNS conflict detected: %s -> internal name: %s\n", theOriginalHostname, theCustomHostname);
         }
     }
     
     if(isVerbose) {
-        fprintf(stdout, "Server hostname: %s\n", theCustomHostname);
+        fprintf(stdout, "Server hostname (returned to clients): %s\n", theOriginalHostname);
+        if (strcmp(theCustomHostname, theOriginalHostname) != 0) {
+            fprintf(stdout, "Server internal name: %s\n", theCustomHostname);
+        }
     }
 }
 
@@ -376,8 +381,8 @@ void buildTheResponse(char *message, uint32_t client_ip) {
         }
         message[BUFFER_SIZE - 1] = '\0';
     } else if (strcmp(message, "HOSTNAME") == 0) {
-        // Usa hostname personalizzato se configurato, altrimenti quello di sistema
-        char* hostname = theCustomHostname[0] ? theCustomHostname : get_hostname();
+        // Usa sempre l'hostname originale per i client (senza suffisso -lnid)
+        char* hostname = theOriginalHostname[0] ? theOriginalHostname : get_hostname();
         if (is_authorized) {
             strncpy(message, hostname, BUFFER_SIZE - 1);
             if(isVerbose) fprintf(stdout, "HOSTNAME completo fornito a client autorizzato: %s\n", inet_ntoa(addr));
