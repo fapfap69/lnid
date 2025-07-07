@@ -85,7 +85,7 @@ typedef struct {
 } Client;
 
 // Rate limiting per DoS protection  
-#define MAX_REQUESTS_PER_IP 10  // Aumentato per supportare protocollo SSL
+#define MAX_REQUESTS_PER_IP 50  // Aumentato per supportare protocollo SSL
 #define RATE_LIMIT_WINDOW 60
 
 typedef struct {
@@ -301,14 +301,36 @@ void check_hostname_at_startup() {
     strncpy(theOriginalHostname, theCustomHostname, sizeof(theOriginalHostname) - 1);
     theOriginalHostname[sizeof(theOriginalHostname) - 1] = '\0';
     
-    // Controllo conflitto DNS semplice
-    struct hostent *he = gethostbyname(theCustomHostname);
-    if (he != NULL) {
-        // Modifica solo il nome interno del server, non quello restituito
-        snprintf(theCustomHostname, sizeof(theCustomHostname), "%s-lnid", theOriginalHostname);
+    // Controllo conflitto DNS migliorato
+    struct addrinfo hints, *result = NULL;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET; // Solo IPv4
+    hints.ai_socktype = SOCK_DGRAM;
+    
+    int dns_result = getaddrinfo(theCustomHostname, NULL, &hints, &result);
+    if (dns_result == 0 && result != NULL) {
+        // Hostname esiste nel DNS - controlla se punta a questo server
+        struct sockaddr_in *addr_in = (struct sockaddr_in *)result->ai_addr;
+        uint32_t resolved_ip = ntohl(addr_in->sin_addr.s_addr);
         
+        // Se punta a localhost, non è un conflitto reale
+        if ((resolved_ip & 0xFF000000) != 0x7F000000) {
+            // Conflitto DNS reale - modifica nome interno
+            snprintf(theCustomHostname, sizeof(theCustomHostname), "%s-lnid", theOriginalHostname);
+            
+            if(isVerbose) {
+                fprintf(stdout, "DNS conflict detected: %s resolves to %s -> internal name: %s\n", 
+                    theOriginalHostname, inet_ntoa(addr_in->sin_addr), theCustomHostname);
+            }
+        } else {
+            if(isVerbose) {
+                fprintf(stdout, "Hostname %s resolves to localhost - no conflict\n", theOriginalHostname);
+            }
+        }
+        freeaddrinfo(result);
+    } else {
         if(isVerbose) {
-            fprintf(stdout, "DNS conflict detected: %s -> internal name: %s\n", theOriginalHostname, theCustomHostname);
+            fprintf(stdout, "Hostname %s not found in DNS - no conflict\n", theOriginalHostname);
         }
     }
     
