@@ -41,6 +41,16 @@
 
 #include "lnid-lib.h"
 #include "lnid-ssl.h"
+#include <signal.h>
+
+// Gestore segnali per cleanup
+void signal_handler(int sig) {
+    if(isVerbose) fprintf(stdout, "\nRicevuto segnale %d, cleanup in corso...\n", sig);
+    if(isRSA) {
+        cleanupSecureTempFiles();
+    }
+    exit(EXIT_SUCCESS);
+}
 
 // --- connection states ---
 #define ST_NOOSSL 0
@@ -158,11 +168,19 @@ void handleClientMessage(Client *client, char *message, size_t *bytes_received )
     unsigned char *decr;
     size_t lm;
     char *passw = NULL;
+    static char clientKeyFile[256] = {0};
 
     switch(client->state) {
         case ST_ACCEPTED: // Abbiamo ricevuto una chiave pubblica
-            if(writeAllFile("/tmp/pubclientkey.pem", message, *bytes_received) == FALSE) { exit(EXIT_FAILURE); }
-            client->pubKey = loadKeyFromPEM(osslLibCtx, "/tmp/pubclientkey.pem", passw);
+            // Crea file temporaneo sicuro per chiave client
+            if (clientKeyFile[0] == '\0') {
+                char template_path[256];
+                int fd = createSecureTempFile(template_path, clientKeyFile, sizeof(clientKeyFile));
+                if (fd == -1) { client->state = ST_DESTROY; return; }
+                close(fd);
+            }
+            if(writeAllFile(clientKeyFile, message, *bytes_received) == FALSE) { exit(EXIT_FAILURE); }
+            client->pubKey = loadKeyFromPEM(osslLibCtx, clientKeyFile, passw);
             if(client->pubKey == NULL) { client->state = ST_DESTROY; return; }
             *bytes_received = BUFFER_SIZE; // carica la dimensione massima del buffer pre allocato
             if(readAllFile(PUBKEYFILES, &message, bytes_received) == FALSE) {  // nel buffer la chiave pubblica del server
@@ -218,17 +236,24 @@ int main(int argc, char *argv[]) {
 
     // legge la command line 
     decode_cmdline(argc, argv);
+    
+    // Installa gestore segnali per cleanup
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
 
     // Set up per la cifratura
     if(isRSA) {
         char *passphrase = NULL;
+        // Inizializza file temporanei sicuri
+        initSecureTempFiles();
+        
         pairKey = generateRsaKeyPair(KEY_SIZE); // genera la coppia di chiavi
-        if(pairKey == NULL) { exit(EXIT_FAILURE); } 
-        //if(storeRSAKeyPair(pairKey, PUBKEYFILES, PRIVKEYFILES) == 0) { exit(EXIT_FAILURE); } // crea i due file PEM
+        if(pairKey == NULL) { 
+            cleanupSecureTempFiles();
+            exit(EXIT_FAILURE); 
+        } 
         storeKeyInPEM(pairKey, PUBKEYFILES, EVP_PKEY_PUBLIC_KEY, passphrase);
         storeKeyInPEM(pairKey, PRIVKEYFILES, EVP_PKEY_KEYPAIR, passphrase);
-     //   publicKey = loadKeyFromPEM(osslLibCtx, PUBKEYFILES, passphrase);
-     //   privateKey = loadKeyFromPEM(osslLibCtx, PRIVKEYFILES, passphrase);
     }
     // Creazione del socket UDP
     int sockfd;
@@ -313,6 +338,7 @@ int main(int argc, char *argv[]) {
         freeRsaKeyPair(privateKey);
         freeRsaKeyPair(publicKey);
         OSSL_LIB_CTX_free(osslLibCtx);
+        cleanupSecureTempFiles(); // Pulisce file temporanei
     }
     exit(EXIT_SUCCESS);
 }

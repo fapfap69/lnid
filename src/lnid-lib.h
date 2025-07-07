@@ -461,8 +461,20 @@ int clientKnock(int sockfd, char **rxtxBuffer, size_t *buferLen, char *theServer
     if(rxData(sockfd, rxtxBuffer, buferLen, theServerIp, NULL) == FALSE) { // server pub key ricevuta
         return(FALSE);
     }
-    if(writeAllFile("/tmp/pubserverkey.pem", txBuffer, *buferLen) == FALSE) { exit(EXIT_FAILURE); }
-    EVP_PKEY *keyServPub = loadKeyFromPEM(NULL, "/tmp/pubserverkey.pem", passw);
+    // Crea file temporaneo sicuro per chiave server
+    static char serverKeyFile[256] = {0};
+    if (serverKeyFile[0] == '\0') {
+        char template_path[256];
+        int fd = createSecureTempFile(template_path, serverKeyFile, sizeof(serverKeyFile));
+        if (fd == -1) return FALSE;
+        close(fd);
+    }
+    if(writeAllFile(serverKeyFile, txBuffer, *buferLen) == FALSE) { 
+        unlink(serverKeyFile);
+        exit(EXIT_FAILURE); 
+    }
+    EVP_PKEY *keyServPub = loadKeyFromPEM(NULL, serverKeyFile, passw);
+    unlink(serverKeyFile); // Rimuovi subito dopo l'uso
     if(keyServPub == NULL) { 
         fprintf(stderr,"Chiave pubblica non valida !\n");
         return(FALSE);

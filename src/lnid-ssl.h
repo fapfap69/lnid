@@ -35,13 +35,16 @@
 #include <openssl/evp.h>
 #include <openssl/core_names.h>
 #include <openssl/provider.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
-#define PRIVKEYFILES "/tmp/privateserkey.pem"
-#define PUBKEYFILES "/tmp/publicserkey.pem"
-#define PRIVKEYFILEC "/tmp/privateclikey.pem"
-#define PUBKEYFILEC "/tmp/publicclikey.pem"
-#define SERVERPUBKEY "/tmp/serverpubkey.pem"
-#define CLIENTPUBKEY "/tmp/clientpubkey.pem"
+// File temporanei sicuri - saranno creati dinamicamente
+static char PRIVKEYFILES[256] = {0};
+static char PUBKEYFILES[256] = {0};
+static char PRIVKEYFILEC[256] = {0};
+static char PUBKEYFILEC[256] = {0};
+static char SERVERPUBKEY[256] = {0};
+static char CLIENTPUBKEY[256] = {0};
 
 #define KEY_SIZE 2048
 #define EXPONENT RSA_F4
@@ -54,6 +57,67 @@
 // Variabili globali
 extern int isVerbose; // definito nel main program 
 static const char *propq = NULL;
+
+// Funzione per creare file temporaneo sicuro
+// Ritorna il file descriptor, -1 per errore
+int createSecureTempFile(char *template_path, char *result_path, size_t result_size) {
+    strncpy(template_path, "/tmp/lnid_XXXXXX", 256);
+    int fd = mkstemp(template_path);
+    if (fd == -1) {
+        fprintf(stderr, "createSecureTempFile(): errore creazione file temporaneo\n");
+        return -1;
+    }
+    // Imposta permessi sicuri (solo proprietario)
+    if (fchmod(fd, S_IRUSR | S_IWUSR) == -1) {
+        fprintf(stderr, "createSecureTempFile(): errore impostazione permessi\n");
+        close(fd);
+        unlink(template_path);
+        return -1;
+    }
+    strncpy(result_path, template_path, result_size - 1);
+    result_path[result_size - 1] = '\0';
+    return fd;
+}
+
+// Inizializza i path dei file temporanei sicuri
+void initSecureTempFiles() {
+    char template_path[256];
+    int fd;
+    
+    // Server private key
+    fd = createSecureTempFile(template_path, PRIVKEYFILES, sizeof(PRIVKEYFILES));
+    if (fd != -1) close(fd);
+    
+    // Server public key  
+    fd = createSecureTempFile(template_path, PUBKEYFILES, sizeof(PUBKEYFILES));
+    if (fd != -1) close(fd);
+    
+    // Client private key
+    fd = createSecureTempFile(template_path, PRIVKEYFILEC, sizeof(PRIVKEYFILEC));
+    if (fd != -1) close(fd);
+    
+    // Client public key
+    fd = createSecureTempFile(template_path, PUBKEYFILEC, sizeof(PUBKEYFILEC));
+    if (fd != -1) close(fd);
+    
+    // Server pub key temp
+    fd = createSecureTempFile(template_path, SERVERPUBKEY, sizeof(SERVERPUBKEY));
+    if (fd != -1) close(fd);
+    
+    // Client pub key temp
+    fd = createSecureTempFile(template_path, CLIENTPUBKEY, sizeof(CLIENTPUBKEY));
+    if (fd != -1) close(fd);
+}
+
+// Pulisce i file temporanei
+void cleanupSecureTempFiles() {
+    if (PRIVKEYFILES[0]) { unlink(PRIVKEYFILES); PRIVKEYFILES[0] = '\0'; }
+    if (PUBKEYFILES[0]) { unlink(PUBKEYFILES); PUBKEYFILES[0] = '\0'; }
+    if (PRIVKEYFILEC[0]) { unlink(PRIVKEYFILEC); PRIVKEYFILEC[0] = '\0'; }
+    if (PUBKEYFILEC[0]) { unlink(PUBKEYFILEC); PUBKEYFILEC[0] = '\0'; }
+    if (SERVERPUBKEY[0]) { unlink(SERVERPUBKEY); SERVERPUBKEY[0] = '\0'; }
+    if (CLIENTPUBKEY[0]) { unlink(CLIENTPUBKEY); CLIENTPUBKEY[0] = '\0'; }
+}
 
 // stampa l'errore e abort del programma
 //

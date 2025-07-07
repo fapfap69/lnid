@@ -231,14 +231,25 @@ int main(int argc, char *argv[])
     // Set up per la cifratura
     if(isRSA) {
         char *passphrase = NULL;
+        // Inizializza file temporanei sicuri
+        initSecureTempFiles();
+        
         pairKey = generateRsaKeyPair(KEY_SIZE); // genera la coppia di chiavi
-        if(pairKey == NULL) { exit(EXIT_FAILURE); } 
+        if(pairKey == NULL) { 
+            cleanupSecureTempFiles();
+            exit(EXIT_FAILURE); 
+        } 
         storeKeyInPEM(pairKey, PUBKEYFILEC, EVP_PKEY_PUBLIC_KEY, passphrase);
         storeKeyInPEM(pairKey, PRIVKEYFILEC, EVP_PKEY_KEYPAIR, passphrase);
     }
 
     // Esegui lo scan della sottorete
     scan_subnet(theSubNet, theNetMask, pairKey);
+    
+    // Cleanup
+    if(isRSA) {
+        cleanupSecureTempFiles();
+    }
     exit(EXIT_FAILURE);
 }
 
