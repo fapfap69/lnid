@@ -557,7 +557,7 @@ int sendUdpRequestWithTimeout(char *ip_address, char *response, EVP_PKEY *pairKe
 int sendUdpRequest(char *ip_address, char *response, EVP_PKEY *pairKey,
                     int theListeningPort, char *theMessage, int isRSA) 
 {
-    return sendUdpRequestWithTimeout(ip_address, response, pairKey, theListeningPort, theMessage, isRSA, 0, 100000);
+    return sendUdpRequestWithTimeout(ip_address, response, pairKey, theListeningPort, theMessage, isRSA, 0, 200000);
 }
 
 #endif
