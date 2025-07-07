@@ -27,37 +27,43 @@
 #include <sys/socket.h>
 #include <errno.h>
 
-#define DEFAULT_PORT 16969 // Porta UDP del demone
-#define BUFFER_SIZE 1024
-#define TIMEOUT_SEC 0  // Timeout in secondi
-#define TIMEOUT_USEC 10000 // Timeout in microsecondi
+#include "lnid-lib.h"
+#include "lnid-ssl.h"
 
 // Variabili Globali
+extern int isVerbose;
+
 int theListeningPort = DEFAULT_PORT;
-int isVerbose = 0;
-int theDelay = 20; // milliseconds
+char *theServerIp = NULL;
+char theMesBuf[BUFFER_SIZE] = "HOSTNAME";
+char *theMessage = theMesBuf;
+int theDelay = 150; // milliseconds
 char theSubNet[50] = "192.168.0.0";
 char theNetMask[50] = "255.255.255.0";
-char theMessage[25] = "MAC";
-char theResponse[255];
+char theResponse[RESPONSE_SIZE];
 time_t theTimeOutSec = TIMEOUT_SEC;
 useconds_t theTimeOutUSec = TIMEOUT_USEC;
+
 char theKeyToSearch[255] = "pippo.cern.ch";
+
+int isRSA = 0; // Is the comunication RSA
+OSSL_LIB_CTX *osslLibCtx = NULL;
 
 // Funzione per stampare l'uso del programma
 void print_usage() {
-    printf("***  Local Network Identity Discovery Search  ***\n");
-    printf(" Auth: A.Franco - INFN Bari Italy \n");
-    printf(" Date : 28/11/2024 -  Ver. 1.1    \n\n");
-    printf("Utilizzo: lnid-search -n <nome_host> -s <indirizzo_subnet> -p <porta>  -t <milliseconds> -o <milliseconds> -v -h\n");
-    printf("  -n <search_id>    : l'id da cercare\n");
-    printf("  -k <key>          : la chiave = ID, MAC, HOSTNAME");
-    printf("  -s <indirizzo_subnet> : specifica la subnet\n");
-    printf("  -p <porta>        : specifica la porta da utilizzare (default=16969)\n");
-    printf("  -t <milliseconds> : ritardo fra scansioni successive (default=20\n");
-    printf("  -o <milliseconds> : timeout in ricezione (default=10\n");
-    printf("  -v                : attiva la modalità verbose\n");
-    printf("  -h                : visualizza l'help\n");
+    fprintf(stdout,"***  Local Network Identity Discovery Search  ***\n");
+    fprintf(stdout," Auth: A.Franco - INFN Bari Italy \n");
+    fprintf(stdout," Date : 06/12/2024 -  Ver. 2.0    \n\n");
+    fprintf(stdout,"Utilizzo: lnid-search -n <nome_host> -s <indirizzo_subnet> -p <porta>  -t <milliseconds> -o <milliseconds> -v -h\n");
+    fprintf(stdout,"  -n <search_id>    : l'id da cercare\n");
+    fprintf(stdout,"  -k <key>          : la chiave = ID, MAC, HOSTNAME");
+    fprintf(stdout,"  -s <indirizzo_subnet> : specifica la subnet\n");
+    fprintf(stdout,"  -p <porta>        : specifica la porta da utilizzare (default=16969)\n");
+    fprintf(stdout,"  -t <milliseconds> : ritardo fra scansioni successive (default=20\n");
+    fprintf(stdout,"  -o <milliseconds> : timeout in ricezione (default=10\n");
+    fprintf(stdout,"  -c                : attiva la modalità cifrata\n");
+    fprintf(stdout,"  -v                : attiva la modalità verbose\n");
+    fprintf(stdout,"  -h                : visualizza l'help\n");
     return;
 }
 
@@ -73,23 +79,41 @@ void decode_cmdline(int argc, char *argv[]) {
     // Elaborazione degli argomenti
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
-            strncpy(theKeyToSearch, argv[i + 1], 254); 
+            strncpy(theKeyToSearch, argv[i + 1], sizeof(theKeyToSearch) - 1);
+            theKeyToSearch[sizeof(theKeyToSearch) - 1] = '\0';
             i++; // Salta l'argomento dell'IP
         }
         else if (strcmp(argv[i], "-k") == 0 && i + 1 < argc) {
-            strncpy(theMessage, argv[i + 1], 25); 
+            // Validazione comando
+            if (strcmp(argv[i + 1], "ID") != 0 && strcmp(argv[i + 1], "MAC") != 0 && strcmp(argv[i + 1], "HOSTNAME") != 0) {
+                fprintf(stderr, "Errore: chiave deve essere ID, MAC o HOSTNAME\n");
+                exit(EXIT_FAILURE);
+            }
+            strncpy(theMessage, argv[i + 1], sizeof(theMesBuf) - 1);
+            theMessage[sizeof(theMesBuf) - 1] = '\0';
             i++; // Salta l'argomento dell'IP
         }
         else if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
-            strncpy(theSubNet, argv[i + 1], 49); 
+            strncpy(theSubNet, argv[i + 1], sizeof(theSubNet) - 1);
+            theSubNet[sizeof(theSubNet) - 1] = '\0';
             i++; // Salta l'argomento dell'IP
         }
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
-            theListeningPort = atoi(argv[i + 1]);
+            int port = atoi(argv[i + 1]);
+            if (port <= 0 || port > 65535) {
+                fprintf(stderr, "Errore: porta deve essere tra 1 e 65535\n");
+                exit(EXIT_FAILURE);
+            }
+            theListeningPort = port;
             i++; // Salta l'argomento della porta
         }
         else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
-            theDelay = atoi(argv[i + 1]);
+            int delay = atoi(argv[i + 1]);
+            if (delay < 0 || delay > 10000) {
+                fprintf(stderr, "Errore: delay deve essere tra 0 e 10000 ms\n");
+                exit(EXIT_FAILURE);
+            }
+            theDelay = delay;
             i++; // Salta l'argomento della porta
         }
         else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
@@ -101,12 +125,15 @@ void decode_cmdline(int argc, char *argv[]) {
         else if (strcmp(argv[i], "-v") == 0) {
             isVerbose = 1;
         }
+        else if (strcmp(argv[i], "-c") == 0) {
+            isRSA = 1;
+        }
         else if (strcmp(argv[i], "-h") == 0) {
             print_usage();
             exit(EXIT_SUCCESS); // Error exit code
         }
         else {
-            printf("Opzione %d non valida: %s\n", i, argv[i]);
+            fprintf(stdout,"Opzione %d non valida: %s\n", i, argv[i]);
             print_usage();
             exit(EXIT_FAILURE); // Error exit code
         }
@@ -114,7 +141,7 @@ void decode_cmdline(int argc, char *argv[]) {
 
     // Verifica se sono stati forniti i parametri necessari
     if (*theSubNet == '\0' || theListeningPort == 0 || *theKeyToSearch == '\0') {
-        printf("Errore: Host name, SubNet o porta errata.\n");
+        fprintf(stdout,"Errore: Host name, SubNet o porta errata.\n");
         exit(EXIT_FAILURE); // Error exit code
     }
     if(theTimeOutSec == 0 && theTimeOutUSec == 0) {
@@ -139,84 +166,34 @@ void decode_cmdline(int argc, char *argv[]) {
             strncat(theSubNet, ".0", 49);
             break;
         default:
-            printf("Errore: SubNet %s non ammessa.\n", theSubNet);
+            fprintf(stdout,"Errore: SubNet %s non ammessa.\n", theSubNet);
             exit(EXIT_FAILURE); // Error exit code
             break;
     }
 
     // Stampa delle informazioni di configurazione
     if(isVerbose) {
-        printf("Configurazione:\n");
-        printf("  Host Name: %s\n", theKeyToSearch);
-        printf("  Subnet: %s\n", theSubNet);
-        printf("  Mask: %s\n", theNetMask);
-        printf("  Porta: %d\n", theListeningPort);
-        printf("  Ritardo: %d\n", theDelay);
-        printf("  Timeout: %ld\n", (long)theTimeOutSec * 1000 + ((long)theTimeOutUSec/1000));
-        printf("  Modalità verbose attivata\n");
+        fprintf(stdout,"Configurazione:\n");
+        fprintf(stdout,"  Host Name: %s\n", theKeyToSearch);
+        fprintf(stdout,"  Subnet: %s\n", theSubNet);
+        fprintf(stdout,"  Mask: %s\n", theNetMask);
+        fprintf(stdout,"  Porta: %d\n", theListeningPort);
+        fprintf(stdout,"  Ritardo: %d\n", theDelay);
+        fprintf(stdout,"  Timeout: %ld\n", (long)theTimeOutSec * 1000 + ((long)theTimeOutUSec/1000));
+        fprintf(stdout,"  Modalità cifrata %s\n", isRSA == 0 ? "disattivata" : "attivata" );
+        fprintf(stdout,"  Modalità verbose attivata\n");
     }
     return;
 } 
 
-
-// Funzione per inviare una richiesta UDP a un dato IP e porta
-int send_udp_request(const char *ip_address) {
-    int sockfd;
-    struct sockaddr_in server_addr;
-    struct timeval timeout;
-    char buffer[BUFFER_SIZE];
-
-    // Creazione del socket UDP
-    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("socket");
-        return -1;
-    }
-
-    // Imposta il timeout per il socket
-    timeout.tv_sec = theTimeOutSec;
-    timeout.tv_usec = theTimeOutUSec;
-    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
-        perror("Errore nell'impostazione del timeout");
-        close(sockfd);
-        exit(EXIT_FAILURE);
-    }
-
-    // Impostazione dell'indirizzo del server
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(theListeningPort);
-    server_addr.sin_addr.s_addr = inet_addr(ip_address);
-
-    // Invio di una richiesta al demone (es. "ID" o "HOSTNAME")
-    if (sendto(sockfd, theMessage, strlen(theMessage), 0, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        perror("sendto");
-        close(sockfd);
-        return -1;
-    }
-    if(isVerbose) printf("Invio richiesta a %s: %s\n", ip_address, buffer);
-
-    // Ricezione della risposta dal demone
-    ssize_t recv_len = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, NULL, NULL);
-    if (recv_len < 0) {
-        if (errno == EWOULDBLOCK || errno == EAGAIN) {
-            if(isVerbose) printf("Timeout raggiunto per %s\n", ip_address);
-        } else {
-            if(isVerbose) printf("Errore durante la ricezione per %s", ip_address);
-        }
-        // Nessuna risposta ricevuta
-        close(sockfd);
-        return 0;
-    }
-
-    buffer[recv_len] = '\0';
-    if(isVerbose) printf("Risposta da %s: %s\n", ip_address, buffer);
-    close(sockfd);
-    strncpy(theResponse, buffer, 254);
-    return 1;  // Risposta ricevuta
-}
-
 // Funzione per generare gli indirizzi IP in una sottorete
-void scan_subnet(const char *subnet, const char *mask) {
+void scan_subnet(const char *subnet, const char *mask, EVP_PKEY *pairKey)
+ {
+    static int requests_sent = 0;
+    const int MAX_SEARCH_REQUESTS = 500; // Limite più basso per search
+    time_t scan_start = time(NULL);
+    
+    // Crea gli indirzzi
     struct in_addr subnet_addr, mask_addr;
     inet_pton(AF_INET, subnet, &subnet_addr);
     inet_pton(AF_INET, mask, &mask_addr);
@@ -224,8 +201,15 @@ void scan_subnet(const char *subnet, const char *mask) {
     // Maschera inversa per ottenere la gamma degli IP
     unsigned int start_ip = ntohl(subnet_addr.s_addr) & ntohl(mask_addr.s_addr);
     unsigned int end_ip = start_ip | ~ntohl(mask_addr.s_addr);
-
-    if(isVerbose) printf("Scansione della sottorete %s con maschera %s...\n", subnet, mask);
+    
+    // Controllo dimensione search
+    unsigned int total_ips = end_ip - start_ip - 1;
+    if (total_ips > MAX_SEARCH_REQUESTS) {
+        fprintf(stderr, "Ricerca troppo ampia (%u IPs), limitata a %d\n", total_ips, MAX_SEARCH_REQUESTS);
+        end_ip = start_ip + MAX_SEARCH_REQUESTS + 1;
+    }
+    
+    if(isVerbose) fprintf(stdout,"Scansione della sottorete %s con maschera %s...\n", subnet, mask);
 
     // Scansione della gamma di indirizzi IP
     for (unsigned int ip = start_ip + 1; ip < end_ip; ip++) {
@@ -235,24 +219,64 @@ void scan_subnet(const char *subnet, const char *mask) {
         char ip_string[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &ip_addr, ip_string, INET_ADDRSTRLEN);
 
+        // Controllo limite richieste
+        requests_sent++;
+        if (requests_sent > MAX_SEARCH_REQUESTS) {
+            if(isVerbose) fprintf(stdout,"Limite richieste raggiunto\n");
+            break;
+        }
+        
+        // Controllo timeout totale search (max 5 minuti)
+        if (time(NULL) - scan_start > 300) {
+            if(isVerbose) fprintf(stdout,"Timeout ricerca raggiunto\n");
+            break;
+        }
+        
         // Invia la richiesta UDP a questo IP
-        if(send_udp_request(ip_string) == 1) { // ok
-            if(strcmp(theResponse, theKeyToSearch) == 0) {
-                printf("%s",ip_string);
-                return;
+        if(sendUdpRequest(ip_string, theResponse, pairKey, theListeningPort,theMessage,isRSA) == TRUE) { // ok
+            int exitus = strcmp(theResponse, theKeyToSearch);
+            if(exitus >= 0) {
+                fprintf(stdout,"%s %s\n",ip_string, theResponse);
+                exit(EXIT_SUCCESS);
             }
         }
-        // Inserisce un delay 
-        usleep(theDelay * 1000);
+        
+        // Inserisce un delay minimo per evitare flooding
+        int min_delay = (theDelay < 20) ? 20 : theDelay;
+        usleep(min_delay * 1000);
     }
     return;
 }
 
-int main(int argc, char *argv[]) {
-    // Decodifica la riga di comando 
+int main(int argc, char *argv[]) 
+{
+    EVP_PKEY *pairKey = NULL;
+    
+    // legge la command line 
     decode_cmdline(argc, argv);
+
+    // Set up per la cifratura
+    if(isRSA) {
+        char *passphrase = NULL;
+        // Inizializza file temporanei sicuri
+        initSecureTempFiles();
+        
+        pairKey = generateRsaKeyPair(KEY_SIZE); // genera la coppia di chiavi
+        if(pairKey == NULL) { 
+            cleanupSecureTempFiles();
+            exit(EXIT_FAILURE); 
+        } 
+        storeKeyInPEM(pairKey, PUBKEYFILEC, EVP_PKEY_PUBLIC_KEY, passphrase);
+        storeKeyInPEM(pairKey, PRIVKEYFILEC, EVP_PKEY_KEYPAIR, passphrase);
+    }
+
     // Esegui lo scan della sottorete
-    scan_subnet(theSubNet, theNetMask);
-    exit(EXIT_SUCCESS);
+    scan_subnet(theSubNet, theNetMask, pairKey);
+    
+    // Cleanup
+    if(isRSA) {
+        cleanupSecureTempFiles();
+    }
+    exit(EXIT_FAILURE);
 }
 

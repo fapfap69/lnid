@@ -18,6 +18,10 @@
 #  28/11/2024  -  Creation
 #
 # ---------------------------------------------------------
+OPENSSL_PREFIX?=	/usr
+OPENSSL_SRC?=
+OPENSSL_INC?=	$(OPENSSL_PREFIX)/include
+OPENSSL_LIB?=	$(OPENSSL_PREFIX)/lib
 
 # Variabili
 CC = gcc
@@ -25,6 +29,15 @@ CFLAGS = -Wall -Wextra -g
 SRC_DIR = src
 BUILD_DIR = build
 INSTALL_DIR = /usr/local/bin
+
+CFLAGS+=	-g -O0 -I$(OPENSSL_INC)
+CFLAGS+=	-std=c99
+
+LDLIBS+=	-lcrypto -lssl
+
+LDFLAGS=	-L$(OPENSSL_LIB) -L$(OPENSSL_LIB)/ossl-modules
+LDFLAGS+=	-Wl,-rpath,$(OPENSSL_LIB) -Wl,-rpath,$(OPENSSL_LIB)/ossl-modules
+
 
 PROGRAMS = lnidd lnid-cli lnid-scan lnid-search
 
@@ -37,7 +50,7 @@ all: $(BUILD_DIR) $(TARGETS)
 # Regola per compilare ciascun programma
 $(BUILD_DIR)/%: $(SRC_DIR)/%.c
 	@echo "Compilazione di $< -> $@"
-	$(CC) $(CFLAGS) -o $@ $<
+	$(CC) $(CFLAGS) $(LDLIBS) -o $@ $<
 
 # Regola per creare la directory degli eseguibili
 $(BUILD_DIR):

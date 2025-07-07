@@ -19,7 +19,6 @@
 
  ---------------------------------------------------------
 */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,38 +29,69 @@
 #include <sys/ioctl.h>
 #include <netdb.h>
 #include <errno.h>
-
-
-#ifdef __linux__
-#include <sys/ioctl.h>
+#include <sys/select.h>
 #include <net/if.h>
-#include <sys/socket.h>
-#elif defined(__APPLE__)
+
+#if defined(__APPLE__)
 #include <ifaddrs.h>
-#include <net/if.h>
 #include <netinet/in.h>
 #include <net/ethernet.h>  // Necessario per LLADDR
 #include <net/if_dl.h>
 #endif
 
-#define DEFAULT_PORT 16969 // Porta su cui ascoltare
-#define BUFFER_SIZE 1024
+#include "lnid-lib.h"
+#include "lnid-ssl.h"
+#include <signal.h>
+
+// Gestore segnali per cleanup
+void signal_handler(int sig) {
+    if(isVerbose) fprintf(stdout, "\nRicevuto segnale %d, cleanup in corso...\n", sig);
+    if(isRSA) {
+        cleanupSecureTempFiles();
+    }
+    exit(EXIT_SUCCESS);
+}
+
+// --- connection states ---
+#define ST_NOOSSL 0
+#define ST_ACCEPTED 1
+#define ST_SSLHANDSHAKE 2
+#define ST_SERVED 3
+#define ST_DESTROY 4
+
+typedef struct {
+    struct sockaddr_in addr;
+    socklen_t addr_len;
+    int state;
+    EVP_PKEY *pubKey;
+    time_t last_activity;  // Per timeout inattività
+} Client;
 
 // Variabili Globali
+extern int isVerbose;
+
 int theListeningPort = DEFAULT_PORT;
 char theEthernetMAC[50] = "eth0";
-int isVerbose = 0;
+
+int isRSA = 0; // Is the comunication RSA
+int isSecureMode = 1; // Modalità sicura attiva per default
+EVP_PKEY *privateKey = NULL;
+EVP_PKEY *publicKey = NULL;
+EVP_PKEY *pairKey = NULL;
+OSSL_LIB_CTX *osslLibCtx = NULL;
 
 // Funzione per stampare l'uso del programma
 void print_usage() {
-    printf("***  Local Network Identity Discovery Server  ***\n");
-    printf(" Auth: A.Franco - INFN Bari Italy \n");
-    printf(" Date : 28/11/2024 -  Ver. 1.1    \n\n");
-    printf("Utilizzo: lnidd -e <ethernet> -p <porta> -v -h\n");
-    printf("  -e <ethernet>     : specifica la scheda ethernet da utilizzare  (default=eth0)\n");
-    printf("  -p <porta>        : specifica la porta da utilizzare  (default=16969)\n");
-    printf("  -v                : attiva la modalità verbose\n");
-    printf("  -h                : visualizza l'help\n");
+    fprintf(stdout,"***  Local Network Identity Discovery Server  ***\n");
+    fprintf(stdout," Auth: A.Franco - INFN Bari Italy \n");
+    fprintf(stdout," Date : 06/12/2024 -  Ver. 2.0    \n\n");
+    fprintf(stdout,"Utilizzo: lnidd -e <ethernet> -p <porta> -c -s -v -h\n");
+    fprintf(stdout,"  -e <ethernet>     : specifica la scheda ethernet da utilizzare  (default=eth0)\n");
+    fprintf(stdout,"  -p <porta>        : specifica la porta da utilizzare  (default=16969)\n");
+    fprintf(stdout,"  -c                : attiva la modalità cifrata\n");
+    fprintf(stdout,"  -s                : disattiva la modalità sicura (sconsigliato)\n");
+    fprintf(stdout,"  -v                : attiva la modalità verbose\n");
+    fprintf(stdout,"  -h                : visualizza l'help\n ");
     return;
 }
 
@@ -71,12 +101,25 @@ void decode_cmdline(int argc, char *argv[]) {
     // Elaborazione degli argomenti
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
-            theListeningPort = atoi(argv[i + 1]);
+            int port = atoi(argv[i + 1]);
+            if (port <= 0 || port > 65535) {
+                fprintf(stderr, "Errore: porta deve essere tra 1 e 65535\n");
+                exit(EXIT_FAILURE);
+            }
+            theListeningPort = port;
             i++; // Salta l'argomento della porta
         }
         else if (strcmp(argv[i], "-e") == 0 && i + 1 < argc) {
-            strncpy(theEthernetMAC, argv[i + 1], 49);
+            strncpy(theEthernetMAC, argv[i + 1], sizeof(theEthernetMAC) - 1);
+            theEthernetMAC[sizeof(theEthernetMAC) - 1] = '\0';
             i++; // Salta l'argomento della porta
+        }
+        else if (strcmp(argv[i], "-c") == 0) {
+            isRSA = 1;
+        }
+        else if (strcmp(argv[i], "-s") == 0) {
+            isSecureMode = 0;
+            fprintf(stdout, "ATTENZIONE: Modalità sicura disattivata!\n");
         }
         else if (strcmp(argv[i], "-v") == 0) {
             isVerbose = 1;
@@ -86,7 +129,7 @@ void decode_cmdline(int argc, char *argv[]) {
             exit(EXIT_SUCCESS); // Error exit code
         }
         else {
-            printf("Opzione non valida: %s\n", argv[i]);
+            fprintf(stdout,"Opzione non valida: %s\n", argv[i]);
             print_usage();
             exit(EXIT_FAILURE); // Error exit code
         }
@@ -94,181 +137,323 @@ void decode_cmdline(int argc, char *argv[]) {
 
     // Verifica se sono stati forniti i parametri necessari
     if (theListeningPort == 0) {
-        printf("Errore: porta errata.\n");
+        fprintf(stdout,"Errore: porta errata.\n");
         exit(EXIT_FAILURE); // Error exit code
     }
 
     // Stampa delle informazioni di configurazione
     if(isVerbose) {
-        printf("Configurazione:\n");
-        printf("  Ethernet: %s\n", theEthernetMAC);
-        printf("  Porta: %d\n", theListeningPort);
-        printf("  Modalità verbose attivata\n");
+        fprintf(stdout,"Configurazione:\n");
+        fprintf(stdout,"  Ethernet: %s\n", theEthernetMAC);
+        fprintf(stdout,"  Porta: %d\n", theListeningPort);
+        fprintf(stdout,"  Modalità cifrata %s\n", isRSA == 0 ? "disattivata" : "attivata" );
+        fprintf(stdout,"  Modalità sicura %s\n", isSecureMode == 0 ? "disattivata" : "attivata" );
+        fprintf(stdout,"  Modalità verbose attivata\n");
     }
     return;
 } 
 
-// Funzione per ottenere l'hostname
-char* get_hostname() {
-    static char hostname[256];
-    if (gethostname(hostname, sizeof(hostname)) == 0) {
-        return hostname;
-    } else {
-        perror("gethostname");
-        return "Unknown";
-    }
-}
-
-// Funzione per ottenere un ID univoco (può essere il PID o qualsiasi altra cosa)
-char* get_unique_id() {
-    static char id[256];
-    snprintf(id, sizeof(id), "ID-%d", getpid()); // Utilizza il PID come ID
-    return id;
-}
-
-// Funzione per ottenere il MAC address da usare come ID
-char *get_macaddr_id() {
-    static char id[256];
-    unsigned char *mac = NULL;
-
-#ifdef __linux__
-    int sock;
-    struct ifreq ifr;
-
-    // Crea un socket di tipo AF_INET
-    sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock == -1) {
-        perror("Errore durante la creazione del socket");
-        exit(EXIT_FAILURE);
-    }
-
-    // Copia il nome dell'interfaccia nella struttura ifreq
-    strncpy(ifr.ifr_name, theEthernetMAC, IFNAMSIZ - 1);
-
-    // Usa ioctl per ottenere il MAC address
-    if (ioctl(sock, SIOCGIFHWADDR, &ifr) == -1) {
-        perror("Errore durante l'ottenimento del MAC address");
-        close(sock);
-        exit(EXIT_FAILURE);
-    }
-
-    // Estrae il MAC address dalla struttura ifreq
-    mac = (unsigned char *)ifr.ifr_hwaddr.sa_data;
-
-    // Stampa il MAC address in formato esadecimale
-    if(isVerbose) printf("MAC address di %s: %02x:%02x:%02x:%02x:%02x:%02x\n",
-           ifr.ifr_name,
-           mac[0], mac[1], mac[2],
-           mac[3], mac[4], mac[5]);
-
-    close(sock);
-
-#elif defined(__APPLE__)
-    struct ifaddrs *ifaddr, *ifa;
+// Controlla se l'IP è autorizzato per informazioni sensibili
+int isAuthorizedIP(uint32_t ip_addr) {
+    // Solo localhost e reti private sono autorizzate per default
+    uint32_t ip_host = ntohl(ip_addr);
     
-    // Ottieni tutte le informazioni sulle interfacce di rete
-    if (getifaddrs(&ifaddr) == -1) {
-        perror("getifaddrs");
-        exit(EXIT_FAILURE);
-    }
+    // Localhost (127.0.0.0/8)
+    if ((ip_host & 0xFF000000) == 0x7F000000) return 1;
+    
+    // Reti private RFC 1918
+    // 10.0.0.0/8
+    if ((ip_host & 0xFF000000) == 0x0A000000) return 1;
+    
+    // 172.16.0.0/12  
+    if ((ip_host & 0xFFF00000) == 0xAC100000) return 1;
+    
+    // 192.168.0.0/16
+    if ((ip_host & 0xFFFF0000) == 0xC0A80000) return 1;
+    
+    return 0; // Non autorizzato
+}
 
-    // Scorri le interfacce
-    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
-        // Controlla se l'interfaccia corrisponde a quella richiesta
-        if (ifa->ifa_addr == NULL) {
-            continue;
+void buildTheResponse(char *message, uint32_t client_ip) {
+    int is_authorized = isSecureMode ? isAuthorizedIP(client_ip) : 1; // Se sicurezza disattivata, tutti autorizzati
+    struct in_addr addr;
+    addr.s_addr = client_ip;
+    
+    if (strcmp(message, "ID") == 0) {
+        if (is_authorized) {
+            strncpy(message, get_unique_id(), BUFFER_SIZE - 1);
+            if(isVerbose) fprintf(stdout, "ID fornito a client autorizzato: %s\n", inet_ntoa(addr));
+        } else {
+            strncpy(message, "Non autorizzato", BUFFER_SIZE - 1);
+            fprintf(stdout, "SECURITY: Tentativo accesso ID da IP non autorizzato: %s\n", inet_ntoa(addr));
         }
-
-        // Verifica se l'interfaccia è di tipo AF_LINK (incluso il MAC address)
-        if (ifa->ifa_addr->sa_family == AF_LINK && strcmp(ifa->ifa_name, theEthernetMAC) == 0) {
-            struct sockaddr_dl *sdl = (struct sockaddr_dl *) ifa->ifa_addr;
-            mac = (unsigned char *)sdl->sdl_data + 6;  // I primi 6 byte sono l'indirizzo MAC
-
-            // Stampa l'indirizzo MAC in formato esadecimale
-            printf("MAC address di %s: %02x:%02x:%02x:%02x:%02x:%02x\n",
-                   ifa->ifa_name,
-                   mac[0], mac[1], mac[2],
-                   mac[3], mac[4], mac[5]);
-            break;
+        message[BUFFER_SIZE - 1] = '\0';
+    } else if (strcmp(message, "MAC") == 0) {
+        if (is_authorized) {
+            strncpy(message, get_macaddr_id(theEthernetMAC), BUFFER_SIZE - 1);
+            if(isVerbose) fprintf(stdout, "MAC fornito a client autorizzato: %s\n", inet_ntoa(addr));
+        } else {
+            strncpy(message, "Non autorizzato", BUFFER_SIZE - 1);
+            fprintf(stdout, "SECURITY: Tentativo accesso MAC da IP non autorizzato: %s\n", inet_ntoa(addr));
         }
-    }
-    freeifaddrs(ifaddr);
-#else
-    fprintf(stderr, "Questo programma non è supportato su questo sistema operativo.\n");
-    exit(EXIT_FAILURE);
-#endif
-    if(mac == NULL) {
-        snprintf(id, sizeof(id), "00:00:00:00:00:00");    
+        message[BUFFER_SIZE - 1] = '\0';
+    } else if (strcmp(message, "HOSTNAME") == 0) {
+        // HOSTNAME sempre disponibile per compatibilità, ma limitato
+        char* hostname = get_hostname();
+        if (is_authorized) {
+            strncpy(message, hostname, BUFFER_SIZE - 1);
+            if(isVerbose) fprintf(stdout, "HOSTNAME completo fornito a client autorizzato: %s\n", inet_ntoa(addr));
+        } else {
+            // Restituisce solo parte del hostname per client non autorizzati
+            char limited_hostname[64];
+            strncpy(limited_hostname, hostname, 8); // Solo primi 8 caratteri
+            limited_hostname[8] = '\0';
+            strncat(limited_hostname, "***", sizeof(limited_hostname) - strlen(limited_hostname) - 1);
+            strncpy(message, limited_hostname, BUFFER_SIZE - 1);
+            if(isVerbose) fprintf(stdout, "HOSTNAME limitato fornito a client non autorizzato: %s\n", inet_ntoa(addr));
+        }
+        message[BUFFER_SIZE - 1] = '\0';
     } else {
-        snprintf(id, sizeof(id), "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);    
+        strncpy(message, "Comando non riconosciuto", BUFFER_SIZE - 1);
+        message[BUFFER_SIZE - 1] = '\0';
     }
-    return id;
+    return;
+}
+
+void handleClientMessage(Client *client, char *message, size_t *bytes_received ) {
+    if(isVerbose) fprintf(stdout," Stato:%d Ricevuto messaggio da %s:%d\n",client->state, inet_ntoa(client->addr.sin_addr), ntohs(client->addr.sin_port));
+    
+    unsigned char *decr;
+    size_t lm;
+    char *passw = NULL;
+    static char clientKeyFile[256] = {0};
+
+    switch(client->state) {
+        case ST_ACCEPTED: // Abbiamo ricevuto una chiave pubblica
+            // Crea file temporaneo sicuro per chiave client
+            if (clientKeyFile[0] == '\0') {
+                char template_path[256];
+                int fd = createSecureTempFile(template_path, clientKeyFile, sizeof(clientKeyFile));
+                if (fd == -1) { client->state = ST_DESTROY; return; }
+                close(fd);
+            }
+            if(writeAllFile(clientKeyFile, message, *bytes_received) == FALSE) { exit(EXIT_FAILURE); }
+            client->pubKey = loadKeyFromPEM(osslLibCtx, clientKeyFile, passw);
+            if(client->pubKey == NULL) { client->state = ST_DESTROY; return; }
+            *bytes_received = BUFFER_SIZE; // carica la dimensione massima del buffer pre allocato
+            if(readAllFile(PUBKEYFILES, &message, bytes_received) == FALSE) {  // nel buffer la chiave pubblica del server
+                client->state = ST_DESTROY;
+                break; 
+            }
+            client->state = ST_SSLHANDSHAKE;
+            break;
+
+        case ST_SSLHANDSHAKE: // Adesso si ricevono messaggi criptati
+            // printf("=== privata Server --\n");
+            // dumpKeyPair(pairKey);
+            doDecrypt(pairKey, (const unsigned char *)message, *bytes_received, &decr, &lm);
+            if(decr != NULL) memcpy(message, decr, lm); 
+            message[lm] = '\0';
+            OPENSSL_free(decr);
+            buildTheResponse(message, client->addr.sin_addr.s_addr); // compone la risposta
+            // printf("=== pubblica client --\n");
+            // dumpKeyPair(client->pubKey);
+            doEncrypt(client->pubKey, (const unsigned char *)message, strlen(message), &decr, &lm); //cripta
+            memcpy(message, decr, lm);
+            message[lm] = '\0';
+            *bytes_received = lm;
+            OPENSSL_free(decr);
+            client->state = ST_SERVED;
+            break;
+
+        case ST_SERVED: // Abbiamo ricevuto una fine transazione 
+            if(client->pubKey != NULL) EVP_PKEY_free(client->pubKey);
+            client->pubKey = NULL;
+            strcpy(message, "Bye"); // La risposta del server 
+            *bytes_received = 4;
+            client->state = ST_DESTROY;
+            break;
+
+        case ST_DESTROY: // we receive message after end. Parrot mode
+            break;
+
+        case ST_NOOSSL: // Questo e' il comportamento semplice
+            buildTheResponse(message, client->addr.sin_addr.s_addr);
+            *bytes_received = strlen(message);
+            break;
+
+        default: 
+            break;
+    }
+    return;
 }
 
 int main(int argc, char *argv[]) {
-    int sockfd;
-    struct sockaddr_in server_addr, client_addr;
-    socklen_t addr_len = sizeof(client_addr);
+
     char buffer[BUFFER_SIZE];
 
     // legge la command line 
     decode_cmdline(argc, argv);
+    
+    // Installa gestore segnali per cleanup
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
 
+    // Set up per la cifratura
+    if(isRSA) {
+        char *passphrase = NULL;
+        // Inizializza file temporanei sicuri
+        initSecureTempFiles();
+        
+        pairKey = generateRsaKeyPair(KEY_SIZE); // genera la coppia di chiavi
+        if(pairKey == NULL) { 
+            cleanupSecureTempFiles();
+            exit(EXIT_FAILURE); 
+        } 
+        storeKeyInPEM(pairKey, PUBKEYFILES, EVP_PKEY_PUBLIC_KEY, passphrase);
+        storeKeyInPEM(pairKey, PRIVKEYFILES, EVP_PKEY_KEYPAIR, passphrase);
+    }
     // Creazione del socket UDP
-    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
-        perror("socket");
-        exit(EXIT_FAILURE);
-    }
-    if(isVerbose) printf("Socket creato \n");
+    int sockfd;
+    struct sockaddr_in server_addr;
+    fd_set read_fds, temp_fds;
+    size_t bytes_received;
 
-    // Inizializzazione della struttura dell'indirizzo del server
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY; // Accetta connessioni su tutte le interfacce
-    server_addr.sin_port = htons(theListeningPort);
+    creaIlServerSocket(&sockfd, &server_addr, &read_fds, theListeningPort);
+    int max_fd = sockfd;
 
-    // Binding del socket all'indirizzo e alla porta
-    if (bind(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        perror("bind");
-        close(sockfd);
-        exit(EXIT_FAILURE);
-    }
-    if(isVerbose) printf("Server UDP in ascolto sulla porta %d...\n", theListeningPort);
+    Client clients[MAX_CLIENTS];
+    int client_count = 0;
+    time_t last_cleanup = time(NULL);
 
+    if(isVerbose) fprintf(stdout,"Server UDP in ascolto sulla porta %d...\n", theListeningPort);
     while (1) {
-        // Ricezione del messaggio
-        ssize_t recv_len = recvfrom(sockfd, buffer, BUFFER_SIZE, 0, (struct sockaddr*)&client_addr, &addr_len);
-        if (recv_len < 0) {
-            perror("recvfrom");
-            continue;
+        temp_fds = read_fds;
+        
+        // Imposta timeout per select
+        struct timeval select_timeout;
+        select_timeout.tv_sec = 1;
+        select_timeout.tv_usec = 0;
+        
+        // Attendi che ci sia attività su uno dei socket
+        int activity = select(max_fd + 1, &temp_fds, NULL, NULL, &select_timeout);
+        if (activity < 0) {
+            perror("Errore nella chiamata a select");
+            break;
         }
-
-        // Null-terminate il buffer
-        buffer[recv_len] = '\0';
-        if(isVerbose) printf("Ricevuto messaggio da %s:%d: %s\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port), buffer);
-
-        // Preparazione della risposta (ID o hostname)
-        char* response = NULL;
-        if (strcmp(buffer, "ID") == 0) {
-            response = get_unique_id();
-        } else if (strcmp(buffer, "MAC") == 0) {
-            response = get_macaddr_id();
-        } else if (strcmp(buffer, "HOSTNAME") == 0) {
-            response = get_hostname();
-        } else {
-            response = "Comando non riconosciuto";
+        
+        // Cleanup periodico ogni 30 secondi
+        time_t now = time(NULL);
+        if (now - last_cleanup > 30) {
+            cleanupRateLimitTable();
+            // Cleanup client inattivi
+            for (int i = 0; i < client_count; i++) {
+                if (clients[i].state != ST_DESTROY && 
+                    now - clients[i].last_activity > 300) { // 5 minuti
+                    if(clients[i].pubKey != NULL) {
+                        EVP_PKEY_free(clients[i].pubKey);
+                        clients[i].pubKey = NULL;
+                    }
+                    clients[i].state = ST_DESTROY;
+                    if(isVerbose) fprintf(stdout,"Client timeout: %s:%d\n", 
+                        inet_ntoa(clients[i].addr.sin_addr), ntohs(clients[i].addr.sin_port));
+                }
+            }
+            last_cleanup = now;
         }
-
-        // Invio della risposta al client
-        ssize_t sent_len = sendto(sockfd, response, strlen(response), 0, (struct sockaddr*)&client_addr, addr_len);
-        if (sent_len < 0) {
-            perror("sendto");
-            continue;
+        
+        // Se nessuna attività, continua il loop
+        if (activity == 0) continue;
+        // Controlla il socket del server
+        if (FD_ISSET(sockfd, &temp_fds)) {
+            struct sockaddr_in client_addr;
+            socklen_t client_len = sizeof(client_addr);
+            // Controllo rate limiting
+            if (!checkRateLimit(client_addr.sin_addr.s_addr)) {
+                if(isVerbose) fprintf(stdout,"Richiesta bloccata per rate limiting: %s:%d\n", 
+                    inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+                continue;
+            }
+            
+            // Ricevi il messaggio dal client
+            bytes_received = recvfrom(sockfd, buffer, BUFFER_SIZE - 1, 0, (struct sockaddr *)&client_addr, &client_len);
+            if (bytes_received < 0) {
+                perror("Errore durante la ricezione");
+                continue;
+            }
+            
+            // Controllo dimensione minima/massima
+            if (bytes_received == 0 || bytes_received > BUFFER_SIZE - 1) {
+                if(isVerbose) fprintf(stdout,"Dimensione messaggio non valida: %zu\n", bytes_received);
+                continue;
+            }
+            if(isVerbose) {
+                fprintf(stdout, "Ricevuto:\n");
+                BIO_dump_indent_fp(stdout, buffer, bytes_received, 2);
+                fprintf(stdout, "\n");
+            }
+            buffer[bytes_received] = '\0';
+            // Verifica se il client è già noto
+            int client_found = 0;
+            int freeSlot = -1;
+            int idx = -1;
+            for (int i = 0; i < client_count; i++) {
+                if (clients[i].addr.sin_addr.s_addr == client_addr.sin_addr.s_addr &&
+                    clients[i].addr.sin_port == client_addr.sin_port) {
+                    client_found = 1;
+                    idx = i;
+                    break;
+                }
+                if(clients[i].state == ST_DESTROY) freeSlot = i;
+            }
+            // Aggiungi il nuovo client se non è noto
+            if (!client_found) {
+                idx = (freeSlot > -1) ? freeSlot : client_count;
+                if(idx < MAX_CLIENTS) {
+                    clients[idx].addr = client_addr;
+                    clients[idx].addr_len = client_len;
+                    clients[idx].state = (isRSA == 0) ? ST_NOOSSL : ST_ACCEPTED;
+                    clients[idx].last_activity = time(NULL);
+                    clients[idx].pubKey = NULL;
+                    if(freeSlot == -1) client_count++;
+                    if(isVerbose) fprintf(stdout,"Nuovo client aggiunto: %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+                } else {
+                    if(isVerbose) fprintf(stdout,"Troppi client connessi, richiesta ignorata\n");
+                    continue;
+                }
+            } else {
+                // Aggiorna attività client esistente
+                clients[idx].last_activity = time(NULL);
+            }
+            // Controllo stato client valido
+            if (clients[idx].state == ST_DESTROY) {
+                if(isVerbose) fprintf(stdout,"Messaggio ignorato da client in stato DESTROY\n");
+                continue;
+            }
+            
+            // Gestisci il messaggio : buffer In/out !
+            handleClientMessage(&clients[idx], buffer, &bytes_received);
+//printf(">>>>>> %lu\n\n",bytes_received);
+            // Invia la risposta al client
+            if(isVerbose) {
+                fprintf(stdout, "Risposta del server:\n");
+                BIO_dump_indent_fp(stdout, buffer, bytes_received, 2);
+                fprintf(stdout, "\n");
+            }
+            if (sendto(sockfd, buffer, bytes_received, 0, (struct sockaddr *)&client_addr, client_len) < 0) {
+                perror("Errore durante l'invio della risposta");
+            }
         }
-        if(isVerbose) printf("Risposta inviata: %s\n", response);
     }
     close(sockfd);
+
+    // Reset up per la cifratura
+    if(isRSA) {
+        freeRsaKeyPair(pairKey);
+        freeRsaKeyPair(privateKey);
+        freeRsaKeyPair(publicKey);
+        OSSL_LIB_CTX_free(osslLibCtx);
+        cleanupSecureTempFiles(); // Pulisce file temporanei
+    }
     exit(EXIT_SUCCESS);
 }
-
-

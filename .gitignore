@@ -1,4 +1,4 @@
-build
+src/build
 .DS_Store
 .vscode
 *.log
