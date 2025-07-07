@@ -68,12 +68,75 @@ typedef struct {
     time_t last_activity;  // Per timeout inattività
 } Client;
 
-// Variabili Globali
-extern int isVerbose;
+// Rate limiting per DoS protection
+#define MAX_REQUESTS_PER_IP 10
+#define RATE_LIMIT_WINDOW 60
 
-// Definizione variabili rate limiting
+typedef struct {
+    uint32_t ip_addr;
+    time_t first_request;
+    int request_count;
+} RateLimitEntry;
+
 RateLimitEntry rate_limit_table[MAX_CLIENTS] = {0};
 int rate_limit_entries = 0;
+
+// Funzione per controllo rate limiting
+int checkRateLimit(uint32_t ip_addr) {
+    time_t now = time(NULL);
+    
+    for (int i = 0; i < rate_limit_entries; i++) {
+        if (rate_limit_table[i].ip_addr == ip_addr) {
+            if (now - rate_limit_table[i].first_request > RATE_LIMIT_WINDOW) {
+                rate_limit_table[i].first_request = now;
+                rate_limit_table[i].request_count = 1;
+                return TRUE;
+            }
+            rate_limit_table[i].request_count++;
+            if (rate_limit_table[i].request_count > MAX_REQUESTS_PER_IP) {
+                return FALSE;
+            }
+            return TRUE;
+        }
+    }
+    
+    if (rate_limit_entries < MAX_CLIENTS) {
+        rate_limit_table[rate_limit_entries].ip_addr = ip_addr;
+        rate_limit_table[rate_limit_entries].first_request = now;
+        rate_limit_table[rate_limit_entries].request_count = 1;
+        rate_limit_entries++;
+        return TRUE;
+    }
+    
+    for (int i = 0; i < rate_limit_entries; i++) {
+        if (now - rate_limit_table[i].first_request > RATE_LIMIT_WINDOW) {
+            rate_limit_table[i].ip_addr = ip_addr;
+            rate_limit_table[i].first_request = now;
+            rate_limit_table[i].request_count = 1;
+            return TRUE;
+        }
+    }
+    
+    return FALSE;
+}
+
+void cleanupRateLimitTable() {
+    time_t now = time(NULL);
+    int write_idx = 0;
+    
+    for (int read_idx = 0; read_idx < rate_limit_entries; read_idx++) {
+        if (now - rate_limit_table[read_idx].first_request <= RATE_LIMIT_WINDOW) {
+            if (write_idx != read_idx) {
+                rate_limit_table[write_idx] = rate_limit_table[read_idx];
+            }
+            write_idx++;
+        }
+    }
+    rate_limit_entries = write_idx;
+}
+
+// Variabili Globali
+extern int isVerbose;
 
 int theListeningPort = DEFAULT_PORT;
 char theEthernetMAC[50] = "eth0";

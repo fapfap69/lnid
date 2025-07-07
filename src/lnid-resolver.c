@@ -46,11 +46,6 @@ typedef struct {
 
 // Variabili globali
 extern int isVerbose;
-
-// Definizione variabili rate limiting (non usate nel resolver ma necessarie per linking)
-RateLimitEntry rate_limit_table[MAX_CLIENTS] = {0};
-int rate_limit_entries = 0;
-
 int isDaemon = 1;
 int scanInterval = SCAN_INTERVAL;
 char subnet[50] = "192.168.1";

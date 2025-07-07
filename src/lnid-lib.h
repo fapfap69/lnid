@@ -47,77 +47,6 @@
 //  Variabili globali 
 int isVerbose = 0;
 
-// Dichiarazioni esterne per rate limiting
-extern RateLimitEntry rate_limit_table[MAX_CLIENTS];
-extern int rate_limit_entries;
-
-// Funzione per controllo rate limiting
-// Ritorna TRUE se la richiesta è permessa, FALSE se bloccata
-int checkRateLimit(uint32_t ip_addr) {
-    time_t now = time(NULL);
-    
-    // Cerca IP esistente nella tabella
-    for (int i = 0; i < rate_limit_entries; i++) {
-        if (rate_limit_table[i].ip_addr == ip_addr) {
-            // Controlla se la finestra è scaduta
-            if (now - rate_limit_table[i].first_request > RATE_LIMIT_WINDOW) {
-                // Reset contatore
-                rate_limit_table[i].first_request = now;
-                rate_limit_table[i].request_count = 1;
-                return TRUE;
-            }
-            // Incrementa contatore
-            rate_limit_table[i].request_count++;
-            if (rate_limit_table[i].request_count > MAX_REQUESTS_PER_IP) {
-                if(isVerbose) {
-                    struct in_addr addr;
-                    addr.s_addr = ip_addr;
-                    fprintf(stdout, "Rate limit superato per IP: %s\n", inet_ntoa(addr));
-                }
-                return FALSE; // Bloccato
-            }
-            return TRUE;
-        }
-    }
-    
-    // Nuovo IP - aggiungi alla tabella se c'è spazio
-    if (rate_limit_entries < MAX_CLIENTS) {
-        rate_limit_table[rate_limit_entries].ip_addr = ip_addr;
-        rate_limit_table[rate_limit_entries].first_request = now;
-        rate_limit_table[rate_limit_entries].request_count = 1;
-        rate_limit_entries++;
-        return TRUE;
-    }
-    
-    // Tabella piena - cerca slot scaduto
-    for (int i = 0; i < rate_limit_entries; i++) {
-        if (now - rate_limit_table[i].first_request > RATE_LIMIT_WINDOW) {
-            rate_limit_table[i].ip_addr = ip_addr;
-            rate_limit_table[i].first_request = now;
-            rate_limit_table[i].request_count = 1;
-            return TRUE;
-        }
-    }
-    
-    return FALSE; // Tabella piena
-}
-
-// Pulisce entries scadute dalla tabella rate limiting
-void cleanupRateLimitTable() {
-    time_t now = time(NULL);
-    int write_idx = 0;
-    
-    for (int read_idx = 0; read_idx < rate_limit_entries; read_idx++) {
-        if (now - rate_limit_table[read_idx].first_request <= RATE_LIMIT_WINDOW) {
-            if (write_idx != read_idx) {
-                rate_limit_table[write_idx] = rate_limit_table[read_idx];
-            }
-            write_idx++;
-        }
-    }
-    rate_limit_entries = write_idx;
-}
-
 // --- The SSL support
 #include "lnid-ssl.h"
 
@@ -128,18 +57,8 @@ void cleanupRateLimitTable() {
 #define MAX_CLIENTS 100
 #define TIMEOUT_SEC 2  // Timeout in secondi
 #define TIMEOUT_USEC 0 // Timeout in microsecondi
-#define MAX_REQUESTS_PER_IP 10  // Max richieste per IP per finestra
-#define RATE_LIMIT_WINDOW 60    // Finestra rate limiting in secondi
-#define CRYPTO_TIMEOUT_SEC 5    // Timeout operazioni crittografiche
 #define TRUE 1
 #define FALSE 0
-
-// Struttura per rate limiting
-typedef struct {
-    uint32_t ip_addr;
-    time_t first_request;
-    int request_count;
-} RateLimitEntry;
 
 // Funzione per fare il dump di una sockaddr_in
 //
