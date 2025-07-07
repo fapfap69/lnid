@@ -1,3 +1,6 @@
+#define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200112L
+
 /* ----------------------------------------------------------
     LNID - Local Network Identity Discovery
 
@@ -32,6 +35,8 @@
 #include <errno.h>
 #include <sys/select.h>
 #include <net/if.h>
+#include <sys/types.h>
+#include <sys/socket.h>
 
 #if defined(__APPLE__)
 #include <ifaddrs.h>
