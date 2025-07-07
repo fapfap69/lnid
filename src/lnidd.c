@@ -71,6 +71,10 @@ typedef struct {
 // Variabili Globali
 extern int isVerbose;
 
+// Definizione variabili rate limiting
+RateLimitEntry rate_limit_table[MAX_CLIENTS] = {0};
+int rate_limit_entries = 0;
+
 int theListeningPort = DEFAULT_PORT;
 char theEthernetMAC[50] = "eth0";
 char theCustomHostname[256] = ""; // Hostname personalizzato (vuoto = usa sistema)

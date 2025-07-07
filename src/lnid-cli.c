@@ -33,6 +33,10 @@
 // Variabili Globali
 extern int isVerbose;
 
+// Definizione variabili rate limiting (non usate nel client ma necessarie per linking)
+RateLimitEntry rate_limit_table[MAX_CLIENTS] = {0};
+int rate_limit_entries = 0;
+
 int theListeningPort = DEFAULT_PORT;
 char *theServerIp = NULL;
 char theMesBuf[BUFFER_SIZE] = "HOSTNAME";

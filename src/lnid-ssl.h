@@ -324,7 +324,7 @@ static int cryptoWithTimeout(int (*crypto_func)(EVP_PKEY*, const unsigned char*,
     int result = crypto_func(key, in, in_len, out, out_len);
     time_t end_time = time(NULL);
     
-    if (end_time - start_time > CRYPTO_TIMEOUT_SEC) {
+    if (end_time - start_time > 5) { // CRYPTO_TIMEOUT_SEC
         if(isVerbose) fprintf(stderr, "Timeout operazione crittografica: %ld secondi\n", end_time - start_time);
         if (*out) {
             OPENSSL_free(*out);
