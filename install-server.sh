@@ -108,9 +108,7 @@ Group=lnid
 
 # Sicurezza
 NoNewPrivileges=true
-ProtectSystem=strict
 ProtectHome=true
-PrivateDevices=true
 
 [Install]
 WantedBy=multi-user.target

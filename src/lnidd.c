@@ -544,17 +544,31 @@ int main(int argc, char *argv[]) {
     
     // Set up per la cifratura
     if(isRSA) {
+        if(isVerbose) fprintf(stdout, "Modalità cifrata attivata - inizializzazione SSL...\n");
         char *passphrase = NULL;
         // Inizializza file temporanei sicuri
         initSecureTempFiles();
+        if(isVerbose) fprintf(stdout, "File temporanei inizializzati\n");
         
         pairKey = generateRsaKeyPair(KEY_SIZE); // genera la coppia di chiavi
         if(pairKey == NULL) { 
+            fprintf(stderr, "Errore generazione chiavi RSA\n");
             cleanupSecureTempFiles();
             exit(EXIT_FAILURE); 
         } 
-        storeKeyInPEM(pairKey, PUBKEYFILES, EVP_PKEY_PUBLIC_KEY, passphrase);
-        storeKeyInPEM(pairKey, PRIVKEYFILES, EVP_PKEY_KEYPAIR, passphrase);
+        if(isVerbose) fprintf(stdout, "Chiavi RSA generate con successo\n");
+        
+        if(storeKeyInPEM(pairKey, PUBKEYFILES, EVP_PKEY_PUBLIC_KEY, passphrase) == FALSE) {
+            fprintf(stderr, "Errore salvataggio chiave pubblica in %s\n", PUBKEYFILES);
+        } else if(isVerbose) {
+            fprintf(stdout, "Chiave pubblica salvata in %s\n", PUBKEYFILES);
+        }
+        
+        if(storeKeyInPEM(pairKey, PRIVKEYFILES, EVP_PKEY_KEYPAIR, passphrase) == FALSE) {
+            fprintf(stderr, "Errore salvataggio chiave privata in %s\n", PRIVKEYFILES);
+        } else if(isVerbose) {
+            fprintf(stdout, "Chiave privata salvata in %s\n", PRIVKEYFILES);
+        }
     }
     // Creazione del socket UDP
     int sockfd;
