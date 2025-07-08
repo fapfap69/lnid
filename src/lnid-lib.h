@@ -1,3 +1,7 @@
+#ifdef __APPLE__
+#define _DARWIN_C_SOURCE
+#endif
+
 /* ----------------------------------------------------------
     LNID - Local Network Identity Discovery
 
@@ -46,6 +50,7 @@
 #include <netinet/in.h>
 #include <net/ethernet.h>  // Necessario per LLADDR
 #include <net/if_dl.h>
+#include <sys/socket.h>    // Per AF_LINK
 #endif
 
 //  Variabili globali 

@@ -203,7 +203,7 @@ void scan_subnet(const char *subnet, const char *mask, EVP_PKEY *pairKey)
     }
     
     if(isVerbose) fprintf(stdout,"Scansione della sottorete %s con maschera %s...\n", subnet, mask);
-
+    if(isVerbose) fprintf(stdout,"Timeout : %lds.  %luus, Delay: %dms\n", theTimeOutSec, theTimeOutUSec, theDelay);
     // Scansione della gamma di indirizzi IP
     for (unsigned int ip = start_ip + 1; ip < end_ip; ip++) {
         // Conversione da int a stringa IP

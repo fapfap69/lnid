@@ -1,3 +1,7 @@
+#ifdef __APPLE__
+#define _DARWIN_C_SOURCE
+#endif
+
 /* ----------------------------------------------------------
     LNID - Local Network Identity Discovery
 
