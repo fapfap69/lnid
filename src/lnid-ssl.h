@@ -39,8 +39,10 @@
 #include <openssl/evp.h>
 #include <openssl/core_names.h>
 #include <openssl/provider.h>
+#include <openssl/param_build.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <openssl/params.h>
 
 // File temporanei sicuri - saranno creati dinamicamente
 static char PRIVKEYFILES[256] = {0};
@@ -153,10 +155,27 @@ EVP_PKEY *generateRsaKeyPair(unsigned int bits)
         errorAndExit("generateRsaKeyPair() : Set per la chiave RSA non riuscito");
     }
     BIGNUM* exponent_bn = BN_new();
-    BN_set_word(exponent_bn, exponent);
-    if(EVP_PKEY_CTX_set_rsa_keygen_pubexp(ctx, exponent_bn) <= 0) {
-        errorAndExit("generateRsaKeyPair() : EVP_PKEY_CTX_set_rsa_keygen_pubexp fallito !");
+    if (!exponent_bn || !BN_set_word(exponent_bn, exponent)) {
+        BN_free(exponent_bn);
+        errorAndExit("generateRsaKeyPair() : Errore creazione esponente");
     }
+    
+    // Usa il metodo moderno per impostare l'esponente
+    OSSL_PARAM params[2];
+    params[0] = OSSL_PARAM_construct_BN(OSSL_PKEY_PARAM_RSA_E, NULL, 0);
+    params[1] = OSSL_PARAM_construct_end();
+    
+    if (!OSSL_PARAM_set_BN(&params[0], exponent_bn)) {
+        BN_free(exponent_bn);
+        errorAndExit("generateRsaKeyPair() : Errore impostazione parametro esponente");
+    }
+    
+    if (EVP_PKEY_CTX_set_params(ctx, params) <= 0) {
+        BN_free(exponent_bn);
+        errorAndExit("generateRsaKeyPair() : EVP_PKEY_CTX_set_params fallito !");
+    }
+    
+    BN_free(exponent_bn);
     EVP_PKEY* pkey = NULL;
     if(EVP_PKEY_keygen(ctx, &pkey) != 1) { 
         errorAndExit("generateRsaKeyPair() : Generazione della coppia di chiavi non riuscita !");

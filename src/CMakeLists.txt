@@ -30,7 +30,7 @@ set(SOURCES
 # Aggiungi i target eseguibili e collega le librerie OpenSSL
 foreach(file ${SOURCES})
     get_filename_component(target_name ${file} NAME_WE) # Rimuove estensione
-    add_executable(${target_name} ${file})
+    add_executable(${target_name} ${file} lnid-common.c)
     target_link_libraries(${target_name} OpenSSL::SSL OpenSSL::Crypto)
     target_include_directories(${target_name} PRIVATE ${CMAKE_SOURCE_DIR})
 endforeach()

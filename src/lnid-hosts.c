@@ -13,6 +13,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include "lnid-hosts.h"
 
 #define HOSTS_FILE "/etc/hosts"
 #define LNID_MARKER "# LNID-MANAGED"

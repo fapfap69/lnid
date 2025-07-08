@@ -51,6 +51,7 @@
 
 #include "lnid-lib.h"
 #include "lnid-ssl.h"
+#include "lnidd.h"
 #include <signal.h>
 
 // Variabili Globali
@@ -171,9 +172,7 @@ void cleanupRateLimitTable() {
 
 // Funzione per stampare l'uso del programma
 void print_usage() {
-    fprintf(stdout,"***  Local Network Identity Discovery Server  ***\n");
-    fprintf(stdout," Auth: A.Franco - INFN Bari Italy \n");
-    fprintf(stdout," Date : 06/12/2024 -  Ver. 2.0    \n\n");
+    lnid_print_header("Local Network Identity Discovery Server", "Server daemon per rispondere a richieste LNID");
     fprintf(stdout,"Utilizzo: lnidd -e <ethernet> -p <porta> -n <hostname> -c -s -v -h\n");
     fprintf(stdout,"  -e <ethernet>     : specifica la scheda ethernet da utilizzare  (default=eth0)\n");
     fprintf(stdout,"  -p <porta>        : specifica la porta da utilizzare  (default=16969)\n");
@@ -237,9 +236,9 @@ void decode_cmdline(int argc, char *argv[]) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
             int port = atoi(argv[i + 1]);
-            if (port <= 0 || port > 65535) {
-                fprintf(stderr, "Errore: porta deve essere tra 1 e 65535\n");
-                exit(EXIT_FAILURE);
+            if (!lnid_validate_port(port)) {
+                lnid_print_error("porta deve essere tra 1 e 65535");
+                exit(LNID_INVALID_ARGS);
             }
             theListeningPort = port;
             i++; // Salta l'argomento della porta
@@ -282,18 +281,16 @@ void decode_cmdline(int argc, char *argv[]) {
     }
 
     // Stampa delle informazioni di configurazione
-    if(isVerbose) {
-        fprintf(stdout,"Configurazione:\n");
-        fprintf(stdout,"  Ethernet: %s\n", theEthernetMAC);
-        fprintf(stdout,"  Porta: %d\n", theListeningPort);
-        fprintf(stdout,"  Hostname: %s\n", theCustomHostname[0] ? theCustomHostname : "<sistema>");
-        fprintf(stdout,"  Modalità cifrata %s\n", isRSA == 0 ? "disattivata" : "attivata" );
-        fprintf(stdout,"  Modalità sicura %s\n", isSecureMode == 0 ? "disattivata" : "attivata" );
-        if (authorizedNetworks[0]) {
-            fprintf(stdout,"  Reti autorizzate: %s\n", authorizedNetworks);
-        }
-        fprintf(stdout,"  Modalità verbose attivata\n");
+    lnid_print_verbose("Configurazione:");
+    lnid_print_verbose("  Ethernet: %s", theEthernetMAC);
+    lnid_print_verbose("  Porta: %d", theListeningPort);
+    lnid_print_verbose("  Hostname: %s", theCustomHostname[0] ? theCustomHostname : "<sistema>");
+    lnid_print_verbose("  Modalità cifrata %s", isRSA == 0 ? "disattivata" : "attivata");
+    lnid_print_verbose("  Modalità sicura %s", isSecureMode == 0 ? "disattivata" : "attivata");
+    if (authorizedNetworks[0]) {
+        lnid_print_verbose("  Reti autorizzate: %s", authorizedNetworks);
     }
+    lnid_print_verbose("  Modalità verbose attivata");
     return;
 } 
 
@@ -443,7 +440,8 @@ void buildTheResponse(char *message, uint32_t client_ip) {
     return;
 }
 
-void handleClientMessage(Client *client, char *message, size_t *bytes_received ) {
+void handleClientMessage(void *client_ptr, char *message, size_t *bytes_received ) {
+    Client *client = (Client *)client_ptr;
     if(isVerbose) fprintf(stdout," Stato:%d Ricevuto messaggio da %s:%d\n",client->state, inet_ntoa(client->addr.sin_addr), ntohs(client->addr.sin_port));
     
     unsigned char *decr;

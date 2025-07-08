@@ -29,6 +29,7 @@
 
 #include "lnid-lib.h"
 #include "lnid-ssl.h"
+#include "lnid-search.h"
 
 // Variabili Globali
 extern int isVerbose;
@@ -51,9 +52,7 @@ OSSL_LIB_CTX *osslLibCtx = NULL;
 
 // Funzione per stampare l'uso del programma
 void print_usage() {
-    fprintf(stdout,"***  Local Network Identity Discovery Search  ***\n");
-    fprintf(stdout," Auth: A.Franco - INFN Bari Italy \n");
-    fprintf(stdout," Date : 06/12/2024 -  Ver. 2.0    \n\n");
+    lnid_print_header("Local Network Identity Discovery Search", "Cerca hostname specifico nella rete");
     fprintf(stdout,"Utilizzo: lnid-search -n <nome_host> -s <indirizzo_subnet> -p <porta>  -t <milliseconds> -o <milliseconds> -v -h\n");
     fprintf(stdout,"  -n <search_id>    : l'id da cercare\n");
     fprintf(stdout,"  -k <key>          : la chiave = ID, MAC, HOSTNAME");
@@ -100,18 +99,18 @@ void decode_cmdline(int argc, char *argv[]) {
         }
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
             int port = atoi(argv[i + 1]);
-            if (port <= 0 || port > 65535) {
-                fprintf(stderr, "Errore: porta deve essere tra 1 e 65535\n");
-                exit(EXIT_FAILURE);
+            if (!lnid_validate_port(port)) {
+                lnid_print_error("porta deve essere tra 1 e 65535");
+                exit(LNID_INVALID_ARGS);
             }
             theListeningPort = port;
             i++; // Salta l'argomento della porta
         }
         else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             int delay = atoi(argv[i + 1]);
-            if (delay < 0 || delay > 10000) {
-                fprintf(stderr, "Errore: delay deve essere tra 0 e 10000 ms\n");
-                exit(EXIT_FAILURE);
+            if (!lnid_validate_delay(delay)) {
+                lnid_print_error("delay deve essere tra 0 e 10000 ms");
+                exit(LNID_INVALID_ARGS);
             }
             theDelay = delay;
             i++; // Salta l'argomento della porta
@@ -172,17 +171,15 @@ void decode_cmdline(int argc, char *argv[]) {
     }
 
     // Stampa delle informazioni di configurazione
-    if(isVerbose) {
-        fprintf(stdout,"Configurazione:\n");
-        fprintf(stdout,"  Host Name: %s\n", theKeyToSearch);
-        fprintf(stdout,"  Subnet: %s\n", theSubNet);
-        fprintf(stdout,"  Mask: %s\n", theNetMask);
-        fprintf(stdout,"  Porta: %d\n", theListeningPort);
-        fprintf(stdout,"  Ritardo: %d\n", theDelay);
-        fprintf(stdout,"  Timeout: %ld\n", (long)theTimeOutSec * 1000 + ((long)theTimeOutUSec/1000));
-        fprintf(stdout,"  Modalità cifrata %s\n", isRSA == 0 ? "disattivata" : "attivata" );
-        fprintf(stdout,"  Modalità verbose attivata\n");
-    }
+    lnid_print_verbose("Configurazione:");
+    lnid_print_verbose("  Host Name: %s", theKeyToSearch);
+    lnid_print_verbose("  Subnet: %s", theSubNet);
+    lnid_print_verbose("  Mask: %s", theNetMask);
+    lnid_print_verbose("  Porta: %d", theListeningPort);
+    lnid_print_verbose("  Ritardo: %d", theDelay);
+    lnid_print_verbose("  Timeout: %ld", (long)theTimeOutSec * 1000 + ((long)theTimeOutUSec/1000));
+    lnid_print_verbose("  Modalità cifrata %s", isRSA == 0 ? "disattivata" : "attivata");
+    lnid_print_verbose("  Modalità verbose attivata");
     return;
 } 
 
@@ -210,7 +207,7 @@ void scan_subnet(const char *subnet, const char *mask, EVP_PKEY *pairKey)
     }
     
     if(isVerbose) fprintf(stdout,"Scansione della sottorete %s con maschera %s...\n", subnet, mask);
-    if(isVerbose) fprintf(stdout,"Timeout : %lds.  %luus, Delay: %dms\n", theTimeOutSec, theTimeOutUSec, theDelay);
+    if(isVerbose) fprintf(stdout,"Timeout : %lds.  %uus, Delay: %dms\n", (long)theTimeOutSec, (unsigned int)theTimeOutUSec, theDelay);
     
     // Scansione della gamma di indirizzi IP
     for (unsigned int ip = start_ip + 1; ip < end_ip; ip++) {

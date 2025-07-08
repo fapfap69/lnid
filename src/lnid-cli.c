@@ -29,6 +29,7 @@
 
 #include "lnid-lib.h"
 #include "lnid-ssl.h"
+#include "lnid-cli.h"
 
 // Variabili Globali
 extern int isVerbose;
@@ -43,9 +44,7 @@ OSSL_LIB_CTX *osslLibCtx = NULL;
 
 // Funzione per stampare l'uso del programma
 void print_usage() {
-    fprintf(stdout,"***  Local Network Identity Discovery Client  ***\n");
-    fprintf(stdout," Auth: A.Franco - INFN Bari Italy \n");
-    fprintf(stdout," Date : 06/12/2024 -  Ver. 2.0    \n\n");
+    lnid_print_header("Local Network Identity Discovery Client", "Client per interrogare server LNID");
     fprintf(stdout,"Utilizzo: lnid-cli -i <indirizzo_ip> -p <porta> -d -v -h\n");
     fprintf(stdout,"  -i <indirizzo_ip> : specifica l'indirizzo IP del server\n");
     fprintf(stdout,"  -p <porta>        : specifica la porta da utilizzare (default=16969)\n");
@@ -69,20 +68,18 @@ void decode_cmdline(int argc, char *argv[]) {
     // Elaborazione degli argomenti
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
-            // Validazione IP address
-            struct sockaddr_in sa;
-            if (inet_pton(AF_INET, argv[i+1], &(sa.sin_addr)) != 1) {
-                fprintf(stderr, "Errore: indirizzo IP non valido: %s\n", argv[i+1]);
-                exit(EXIT_FAILURE);
+            if (!lnid_validate_ip(argv[i+1])) {
+                lnid_print_error("indirizzo IP non valido");
+                exit(LNID_INVALID_ARGS);
             }
             theServerIp = argv[i+1];
             i++; // Salta l'argomento dell'IP
         }
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
             int port = atoi(argv[i + 1]);
-            if (port <= 0 || port > 65535) {
-                fprintf(stderr, "Errore: porta deve essere tra 1 e 65535\n");
-                exit(EXIT_FAILURE);
+            if (!lnid_validate_port(port)) {
+                lnid_print_error("porta deve essere tra 1 e 65535");
+                exit(LNID_INVALID_ARGS);
             }
             theListeningPort = port;
             i++; // Salta l'argomento della porta
@@ -119,14 +116,12 @@ void decode_cmdline(int argc, char *argv[]) {
     }
 
     // Stampa delle informazioni di configurazione
-    if(isVerbose) {
-        fprintf(stdout,"Configurazione:\n");
-        fprintf(stdout,"  Server: %s\n", theServerIp);
-        fprintf(stdout,"  Porta: %d\n", theListeningPort);
-        fprintf(stdout,"  Richiesta: %s\n", theMessage);
-        fprintf(stdout,"  Modalità cifrata %s\n", isRSA == 0 ? "disattivata" : "attivata" );
-        fprintf(stdout,"  Modalità verbose attivata\n");
-    }
+    lnid_print_verbose("Configurazione:");
+    lnid_print_verbose("  Server: %s", theServerIp);
+    lnid_print_verbose("  Porta: %d", theListeningPort);
+    lnid_print_verbose("  Richiesta: %s", theMessage);
+    lnid_print_verbose("  Modalità cifrata %s", isRSA == 0 ? "disattivata" : "attivata");
+    lnid_print_verbose("  Modalità verbose attivata");
     return;
 } 
 

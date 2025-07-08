@@ -54,7 +54,7 @@
 #endif
 
 //  Variabili globali 
-int isVerbose = 0;
+extern int isVerbose;
 
 // --- The SSL support
 #include "lnid-ssl.h"

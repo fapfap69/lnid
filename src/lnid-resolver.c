@@ -27,6 +27,7 @@
 
 #include "lnid-lib.h"
 #include "lnid-ssl.h"
+#include "lnid-resolver.h"
 
 // Configurazione
 #define HOSTS_FILE "/etc/hosts"
@@ -111,9 +112,7 @@ void load_config_file() {
 }
 
 void print_usage() {
-    fprintf(stdout,"***  LNID Resolver Daemon  ***\n");
-    fprintf(stdout," Auth: A.Franco - INFN Bari Italy \n");
-    fprintf(stdout," Date : 07/07/2025 -  Ver. 2.1    \n\n");
+    lnid_print_header("LNID Resolver Daemon", "Aggiorna automaticamente /etc/hosts con server LNID");
     fprintf(stdout,"Utilizzo: lnid-resolver -s <subnet> -i <interval> -f -v -h\n");
     fprintf(stdout,"  -s <subnet>       : subnet da scansionare, separate da virgola (default=192.168.1)\n");
     fprintf(stdout,"  -i <interval>     : intervallo scansione in secondi (default=300)\n");
@@ -408,9 +407,9 @@ void decode_cmdline(int argc, char *argv[]) {
         }
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
             int port = atoi(argv[i + 1]);
-            if (port <= 0 || port > 65535) {
-                fprintf(stderr, "Errore: porta deve essere tra 1 e 65535\n");
-                exit(EXIT_FAILURE);
+            if (!lnid_validate_port(port)) {
+                lnid_print_error("porta deve essere tra 1 e 65535");
+                exit(LNID_INVALID_ARGS);
             }
             theListeningPort = port;
             i++;
@@ -441,16 +440,14 @@ void decode_cmdline(int argc, char *argv[]) {
     }
     
     // Stampa configurazione se verbose
-    if(isVerbose) {
-        fprintf(stdout, "Configurazione:\n");
-        fprintf(stdout, "  Subnet: %s\n", subnet);
-        fprintf(stdout, "  Intervallo: %d secondi\n", scanInterval);
-        fprintf(stdout, "  Porta: %d\n", theListeningPort);
-        fprintf(stdout, "  Dominio: %s\n", defaultDomain[0] ? defaultDomain : "<nessuno>");
-        fprintf(stdout, "  Modalità daemon: %s\n", isDaemon ? "attiva" : "disattiva");
-        fprintf(stdout, "  Modalità cifrata: %s\n", isRSA ? "attiva" : "disattiva");
-        fprintf(stdout, "  Modalità verbose: attiva\n");
-    }
+    lnid_print_verbose("Configurazione:");
+    lnid_print_verbose("  Subnet: %s", subnet);
+    lnid_print_verbose("  Intervallo: %d secondi", scanInterval);
+    lnid_print_verbose("  Porta: %d", theListeningPort);
+    lnid_print_verbose("  Dominio: %s", defaultDomain[0] ? defaultDomain : "<nessuno>");
+    lnid_print_verbose("  Modalità daemon: %s", isDaemon ? "attiva" : "disattiva");
+    lnid_print_verbose("  Modalità cifrata: %s", isRSA ? "attiva" : "disattiva");
+    lnid_print_verbose("  Modalità verbose: attiva");
     return;
 }
 
