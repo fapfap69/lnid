@@ -43,6 +43,12 @@ SCAN_INTERVAL=300
 # Porta LNID
 PORT=16969
 
+# Timeout richieste UDP in millisecondi
+TIMEOUT=100
+
+# Delay tra scansioni in millisecondi
+DELAY=50
+
 # Modalità cifrata (0=no, 1=si)
 ENCRYPTED=0
 

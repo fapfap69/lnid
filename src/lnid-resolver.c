@@ -51,6 +51,9 @@ int scanInterval = SCAN_INTERVAL;
 char subnet[50] = "192.168.1";
 int theListeningPort = DEFAULT_PORT;
 int isRSA = 0;
+time_t timeoutSec = 0;
+useconds_t timeoutUSec = 100000; // 100ms default
+int delayMs = 50; // 50ms default
 HostEntry hostCache[MAX_ENTRIES];
 int cacheSize = 0;
 volatile int running = 1;
@@ -83,6 +86,16 @@ void load_config_file() {
         }
         else if (strncmp(line, "VERBOSE=", 8) == 0) {
             isVerbose = atoi(line + 8);
+        }
+        else if (strncmp(line, "TIMEOUT=", 8) == 0) {
+            long mills = atoi(line + 8);
+            if (mills <= 0) mills = 100; // Default 100ms
+            timeoutSec = (time_t)(mills / 1000);
+            timeoutUSec = (useconds_t)((mills % 1000) * 1000);
+        }
+        else if (strncmp(line, "DELAY=", 6) == 0) {
+            int delay = atoi(line + 6);
+            if (delay >= 0 && delay <= 10000) delayMs = delay;
         }
     }
     fclose(config);
@@ -287,13 +300,14 @@ void scan_network() {
         char ip_string[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &ip_addr, ip_string, INET_ADDRSTRLEN);
         
-        if(sendUdpRequest(ip_string, response, pairKey, theListeningPort, "HOSTNAME", isRSA)) {
+        if(sendUdpRequestWithTimeout(ip_string, response, pairKey, theListeningPort, "HOSTNAME", 
+            isRSA, timeoutSec, timeoutUSec)) {
             if(strlen(response) > 0 && strcmp(response, "Non autorizzato") != 0) {
                 update_cache_entry(ip_string, response);
                 discoveries++;
             }
         }
-        usleep(50000); // 50ms delay
+        usleep(delayMs * 1000); // Delay in microseconds
     }
     
     if(isRSA && pairKey) {
