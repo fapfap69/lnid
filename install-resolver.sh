@@ -61,7 +61,7 @@ Wants=network.target
 
 [Service]
 Type=forking
-ExecStart=$EXEC_PATH -s \${SUBNET} -i \${SCAN_INTERVAL} -p \${PORT}
+ExecStart=$EXEC_PATH
 ExecReload=/bin/kill -HUP \$MAINPID
 KillMode=process
 Restart=on-failure
@@ -69,15 +69,10 @@ RestartSec=30
 User=root
 Group=root
 
-# Carica configurazione
-EnvironmentFile=$CONFIG_FILE
-
 # Sicurezza
 NoNewPrivileges=true
-ProtectSystem=strict
 ReadWritePaths=/etc/hosts /tmp
 ProtectHome=true
-PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target

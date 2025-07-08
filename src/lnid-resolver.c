@@ -55,6 +55,39 @@ HostEntry hostCache[MAX_ENTRIES];
 int cacheSize = 0;
 volatile int running = 1;
 
+// Legge configurazione da file
+void load_config_file() {
+    FILE *config = fopen("/etc/lnid-resolver.conf", "r");
+    if (!config) return; // File non trovato, usa default
+    
+    char line[256];
+    while (fgets(line, sizeof(line), config)) {
+        // Rimuovi commenti e spazi
+        char *comment = strchr(line, '#');
+        if (comment) *comment = '\0';
+        
+        // Parsing configurazione
+        if (strncmp(line, "SUBNET=", 7) == 0) {
+            sscanf(line + 7, "%49s", subnet);
+        }
+        else if (strncmp(line, "SCAN_INTERVAL=", 14) == 0) {
+            int interval = atoi(line + 14);
+            if (interval >= 60) scanInterval = interval;
+        }
+        else if (strncmp(line, "PORT=", 5) == 0) {
+            int port = atoi(line + 5);
+            if (port > 0 && port <= 65535) theListeningPort = port;
+        }
+        else if (strncmp(line, "ENCRYPTED=", 10) == 0) {
+            isRSA = atoi(line + 10);
+        }
+        else if (strncmp(line, "VERBOSE=", 8) == 0) {
+            isVerbose = atoi(line + 8);
+        }
+    }
+    fclose(config);
+}
+
 void print_usage() {
     fprintf(stdout,"***  LNID Resolver Daemon  ***\n");
     fprintf(stdout," Auth: A.Franco - INFN Bari Italy \n");
@@ -296,6 +329,9 @@ void daemonize() {
 
 // Decodifica la command line e setta le variabili
 void decode_cmdline(int argc, char *argv[]) {
+    // Carica prima la configurazione da file
+    load_config_file();
+    
     // Parsing argomenti
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-s") == 0 && i + 1 < argc) {
