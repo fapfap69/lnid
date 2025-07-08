@@ -49,6 +49,12 @@ if ! id "lnid" &>/dev/null; then
     useradd -r -s /bin/false -d /nonexistent lnid
 fi
 
+# Crea directory per file temporanei
+echo "Creazione directory /var/lib/lnid..."
+mkdir -p /var/lib/lnid
+chown lnid:lnid /var/lib/lnid
+chmod 700 /var/lib/lnid
+
 # Ottieni hostname corrente per default
 CURRENT_HOSTNAME=$(hostname)
 
@@ -104,7 +110,6 @@ Group=lnid
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-PrivateTmp=true
 PrivateDevices=true
 
 [Install]

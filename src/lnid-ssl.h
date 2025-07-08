@@ -61,11 +61,17 @@ static const char *propq = NULL;
 // Funzione per creare file temporaneo sicuro
 // Ritorna il file descriptor, -1 per errore
 int createSecureTempFile(char *template_path, char *result_path, size_t result_size) {
-    strncpy(template_path, "/tmp/lnid_XXXXXX", 256);
+    // Usa /var/lib/lnid invece di /tmp per evitare problemi con PrivateTmp
+    strncpy(template_path, "/var/lib/lnid/lnid_XXXXXX", 256);
     int fd = mkstemp(template_path);
     if (fd == -1) {
-        fprintf(stderr, "createSecureTempFile(): errore creazione file temporaneo\n");
-        return -1;
+        // Fallback a /tmp se /var/lib/lnid non esiste
+        strncpy(template_path, "/tmp/lnid_XXXXXX", 256);
+        fd = mkstemp(template_path);
+        if (fd == -1) {
+            fprintf(stderr, "createSecureTempFile(): errore creazione file temporaneo\n");
+            return -1;
+        }
     }
     // Imposta permessi sicuri (solo proprietario)
     if (fchmod(fd, S_IRUSR | S_IWUSR) == -1) {
