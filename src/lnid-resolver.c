@@ -49,6 +49,7 @@ extern int isVerbose;
 int isDaemon = 1;
 int scanInterval = SCAN_INTERVAL;
 char subnet[50] = "192.168.1";
+char defaultDomain[256] = ""; // Dominio di default
 int theListeningPort = DEFAULT_PORT;
 int isRSA = 0;
 time_t timeoutSec = 0;
@@ -97,6 +98,9 @@ void load_config_file() {
             int delay = atoi(line + 6);
             if (delay >= 0 && delay <= 10000) delayMs = delay;
         }
+        else if (strncmp(line, "DOMAIN=", 7) == 0) {
+            sscanf(line + 7, "%255s", defaultDomain);
+        }
     }
     fclose(config);
 }
@@ -109,6 +113,7 @@ void print_usage() {
     fprintf(stdout,"  -s <subnet>       : subnet da scansionare (default=192.168.1)\n");
     fprintf(stdout,"  -i <interval>     : intervallo scansione in secondi (default=300)\n");
     fprintf(stdout,"  -p <porta>        : porta LNID (default=16969)\n");
+    fprintf(stdout,"  -d <domain>       : dominio di default per hostname (es. local)\n");
     fprintf(stdout,"  -f                : esegui in foreground (non daemon)\n");
     fprintf(stdout,"  -c                : usa modalità cifrata\n");
     fprintf(stdout,"  -v                : modalità verbose\n");
@@ -196,8 +201,14 @@ int update_hosts_file() {
     
     for (int i = 0; i < cacheSize; i++) {
         if (hostCache[i].active && (now - hostCache[i].last_seen) < ENTRY_TTL) {
-            fprintf(hosts, "%s\t%s\t# LNID auto-discovered\n", 
-                   hostCache[i].ip, hostCache[i].hostname);
+            if (defaultDomain[0] != '\0') {
+                // Aggiungi sia hostname che hostname.domain
+                fprintf(hosts, "%s\t%s\t%s.%s\t# LNID auto-discovered\n", 
+                       hostCache[i].ip, hostCache[i].hostname, hostCache[i].hostname, defaultDomain);
+            } else {
+                fprintf(hosts, "%s\t%s\t# LNID auto-discovered\n", 
+                       hostCache[i].ip, hostCache[i].hostname);
+            }
             active_entries++;
         }
     }
@@ -367,6 +378,11 @@ void decode_cmdline(int argc, char *argv[]) {
             theListeningPort = port;
             i++;
         }
+        else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) {
+            strncpy(defaultDomain, argv[i + 1], sizeof(defaultDomain) - 1);
+            defaultDomain[sizeof(defaultDomain) - 1] = '\0';
+            i++;
+        }
         else if (strcmp(argv[i], "-f") == 0) {
             isDaemon = 0;
         }
@@ -393,6 +409,7 @@ void decode_cmdline(int argc, char *argv[]) {
         fprintf(stdout, "  Subnet: %s\n", subnet);
         fprintf(stdout, "  Intervallo: %d secondi\n", scanInterval);
         fprintf(stdout, "  Porta: %d\n", theListeningPort);
+        fprintf(stdout, "  Dominio: %s\n", defaultDomain[0] ? defaultDomain : "<nessuno>");
         fprintf(stdout, "  Modalità daemon: %s\n", isDaemon ? "attiva" : "disattiva");
         fprintf(stdout, "  Modalità cifrata: %s\n", isRSA ? "attiva" : "disattiva");
         fprintf(stdout, "  Modalità verbose: attiva\n");

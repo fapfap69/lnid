@@ -43,6 +43,10 @@ SCAN_INTERVAL=300
 # Porta LNID
 PORT=16969
 
+# Dominio di default per hostname (vuoto = solo hostname)
+# Esempio: DOMAIN=local crea sia 'hostname' che 'hostname.local'
+DOMAIN=local
+
 # Timeout richieste UDP in millisecondi
 TIMEOUT=100
 

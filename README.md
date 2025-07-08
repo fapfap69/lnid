@@ -107,16 +107,32 @@ In order to install LNID
    ```sh
    make install
    ```
-5. On the LNID server you must run the service as daemon. This script works for a Linux distribution that uses **systemctl** program, with the executable in the **/usr/local/bin** directory
+5. Install the LNID server as daemon:
+   
+   **Linux (systemctl):**
    ```sh
    sudo ./install-server.sh
    ```
+   
+   **macOS (launchd):**
+   ```sh
+   sudo ./install-server-mac.sh
+   ```
+
 6. The client applications don't need installation
 
 7. For automatic hostname resolution, install the resolver daemon:
+   
+   **Linux (systemctl):**
    ```sh
    sudo ./install-resolver.sh
    ```
+   
+   **macOS (launchd):**
+   ```sh
+   sudo ./install-resolver-mac.sh
+   ```
+   
    This enables transparent access to LNID servers by hostname (e.g., `ssh myserver` instead of `ssh 192.168.1.100`)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -145,7 +161,7 @@ the IP address for the subnet is mandatory, example: **192.168.1**
 
 **lnid-resolver** Automatic daemon that maintains /etc/hosts updated with discovered LNID servers.
    ```sh
-    sudo ./lnid-resolver -s \<subnet\> -i \<interval\> -p \<porta\> -f -c -v -h
+    sudo ./lnid-resolver -s \<subnet\> -i \<interval\> -p \<porta\> -d \<domain\> -f -c -v -h
    ```
 Runs as system daemon, automatically discovers hosts and updates /etc/hosts for transparent access.
 
@@ -195,6 +211,8 @@ VERBOSE=0
 ```
 
 **Server Management:**
+
+*Linux (systemctl):*
 ```sh
 # View current configuration
 lnid-server config
@@ -207,6 +225,19 @@ sudo lnid-server start|stop|restart
 
 # View server status
 lnid-server status
+```
+
+*macOS (launchd):*
+```sh
+# Control server service
+sudo launchctl start com.lnid.server
+sudo launchctl stop com.lnid.server
+
+# View logs
+tail -f /var/log/lnid-server.log
+
+# Uninstall service
+sudo launchctl unload /Library/LaunchDaemons/com.lnid.server.plist
 ```
 
 ### Resolver Configuration
@@ -224,14 +255,26 @@ SCAN_INTERVAL=300
 # LNID server port
 PORT=16969
 
+# Default domain for hostnames (empty = hostname only)
+# Example: DOMAIN=local creates both 'hostname' and 'hostname.local'
+DOMAIN=
+
 # Enable encrypted communication (0=no, 1=yes)
 ENCRYPTED=0
+
+# Connection timeout in milliseconds (default 100)
+TIMEOUT=100
+
+# Delay between requests in milliseconds (0-10000, default 50)
+DELAY=50
 
 # Enable verbose logging (0=no, 1=yes)
 VERBOSE=0
 ```
 
 **Resolver Management:**
+
+*Linux (systemctl):*
 ```sh
 # View discovered hosts
 lnid-hosts list
@@ -244,6 +287,22 @@ sudo lnid-hosts clean
 
 # Backup /etc/hosts
 sudo lnid-hosts backup
+```
+
+*macOS (launchd):*
+```sh
+# Control resolver service
+sudo launchctl start com.lnid.resolver
+sudo launchctl stop com.lnid.resolver
+
+# View logs
+tail -f /var/log/lnid-resolver.log
+
+# Manage hosts entries
+lnid-hosts list|clean|backup|status
+
+# Uninstall service
+sudo launchctl unload /Library/LaunchDaemons/com.lnid.resolver.plist
 ```
 
 ### Configuration Examples
@@ -259,6 +318,7 @@ SECURE_MODE=1
 # Resolver scanning 192.168.1.x network
 SUBNET=192.168.1
 SCAN_INTERVAL=300
+DOMAIN=local
 ```
 
 **Example 2: Secure Multi-Network Setup**
@@ -269,12 +329,16 @@ PORT=16969
 HOSTNAME=secure-db
 ENCRYPTED=1
 SECURE_MODE=1
+AUTHORIZED_NETWORKS=10.0.0.0/8,192.168.1.0/24
 VERBOSE=1
 
 # Resolver with encryption and frequent scans
 SUBNET=10.0.1
 SCAN_INTERVAL=120
+DOMAIN=lan
 ENCRYPTED=1
+TIMEOUT=200
+DELAY=30
 VERBOSE=1
 ```
 
@@ -289,8 +353,33 @@ VERBOSE=1
 # Resolver for testing
 SUBNET=127.0.0
 SCAN_INTERVAL=60
+DOMAIN=test
+TIMEOUT=50
+DELAY=10
 VERBOSE=1
 ```
+
+### Domain Configuration
+
+The resolver can automatically add domain suffixes to discovered hostnames:
+
+**Without domain (DOMAIN=""):**
+```
+192.168.1.100    webserver    # LNID auto-discovered
+```
+
+**With domain (DOMAIN=local):**
+```
+192.168.1.100    webserver    webserver.local    # LNID auto-discovered
+```
+
+This allows access via both `ssh webserver` and `ssh webserver.local`.
+
+**Common domain examples:**
+- `local` - Standard for local networks
+- `lan` - Local area network
+- `home` - Home networks
+- `dev` - Development environments
 
 ### Configuration Priority
 
