@@ -161,9 +161,10 @@ the IP address for the subnet is mandatory, example: **192.168.1**
 
 **lnid-resolver** Automatic daemon that maintains /etc/hosts updated with discovered LNID servers.
    ```sh
-    sudo ./lnid-resolver -s \<subnet\> -i \<interval\> -p \<porta\> -d \<domain\> -f -c -v -h
+    sudo ./lnid-resolver -s \<subnets\> -i \<interval\> -p \<porta\> -d \<domain\> -f -c -v -h
    ```
 Runs as system daemon, automatically discovers hosts and updates /etc/hosts for transparent access.
+Supports multiple subnets: `-s "192.168.1,10.0.1,172.16.1"`
 
 **lnid-hosts** Management tool for LNID entries in /etc/hosts.
    ```sh
@@ -246,7 +247,8 @@ The LNID resolver daemon can be configured via `/etc/lnid-resolver.conf` file:
 
 ```bash
 # LNID Resolver Configuration
-# Subnet to scan (without .0 suffix)
+# Subnets to scan (without .0 suffix, comma separated)
+# Examples: SUBNET=192.168.1 or SUBNET=192.168.1,10.0.1,172.16.1
 SUBNET=192.168.1
 
 # Scan interval in seconds (minimum 60)
@@ -332,8 +334,8 @@ SECURE_MODE=1
 AUTHORIZED_NETWORKS=10.0.0.0/8,192.168.1.0/24
 VERBOSE=1
 
-# Resolver with encryption and frequent scans
-SUBNET=10.0.1
+# Resolver with encryption scanning multiple networks
+SUBNET=10.0.1,192.168.1,172.16.1
 SCAN_INTERVAL=120
 DOMAIN=lan
 ENCRYPTED=1

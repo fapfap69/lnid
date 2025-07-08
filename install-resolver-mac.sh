@@ -27,6 +27,8 @@ if [ ! -f "$CONFIG_FILE" ]; then
     echo "Creating default configuration..."
     cat > "$CONFIG_FILE" << EOF
 # LNID Resolver Configuration for macOS
+# Subnets to scan (without .0 suffix, comma separated)
+# Examples: SUBNET=192.168.1 or SUBNET=192.168.1,10.0.1,172.16.1
 SUBNET=192.168.1
 SCAN_INTERVAL=300
 PORT=16969

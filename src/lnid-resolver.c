@@ -48,7 +48,7 @@ typedef struct {
 extern int isVerbose;
 int isDaemon = 1;
 int scanInterval = SCAN_INTERVAL;
-char subnet[50] = "192.168.1";
+char subnet[256] = "192.168.1";
 char defaultDomain[256] = ""; // Dominio di default
 int theListeningPort = DEFAULT_PORT;
 int isRSA = 0;
@@ -72,7 +72,12 @@ void load_config_file() {
         
         // Parsing configurazione
         if (strncmp(line, "SUBNET=", 7) == 0) {
-            sscanf(line + 7, "%49s", subnet);
+            char *subnet_line = line + 7;
+            // Rimuovi newline
+            char *newline = strchr(subnet_line, '\n');
+            if (newline) *newline = '\0';
+            strncpy(subnet, subnet_line, sizeof(subnet) - 1);
+            subnet[sizeof(subnet) - 1] = '\0';
         }
         else if (strncmp(line, "SCAN_INTERVAL=", 14) == 0) {
             int interval = atoi(line + 14);
@@ -110,7 +115,7 @@ void print_usage() {
     fprintf(stdout," Auth: A.Franco - INFN Bari Italy \n");
     fprintf(stdout," Date : 07/07/2025 -  Ver. 2.1    \n\n");
     fprintf(stdout,"Utilizzo: lnid-resolver -s <subnet> -i <interval> -f -v -h\n");
-    fprintf(stdout,"  -s <subnet>       : subnet da scansionare (default=192.168.1)\n");
+    fprintf(stdout,"  -s <subnet>       : subnet da scansionare, separate da virgola (default=192.168.1)\n");
     fprintf(stdout,"  -i <interval>     : intervallo scansione in secondi (default=300)\n");
     fprintf(stdout,"  -p <porta>        : porta LNID (default=16969)\n");
     fprintf(stdout,"  -d <domain>       : dominio di default per hostname (es. local)\n");
@@ -277,23 +282,13 @@ void update_cache_entry(const char *ip, const char *hostname) {
     }
 }
 
-// Scansiona la subnet per server LNID
-void scan_network() {
-    if(isVerbose) fprintf(stdout, "Scansione rete %s...\n", subnet);
-    
-    EVP_PKEY *pairKey = NULL;
-    if(isRSA) {
-        initSecureTempFiles();
-        pairKey = generateRsaKeyPair(KEY_SIZE);
-        if(pairKey) {
-            storeKeyInPEM(pairKey, PUBKEYFILEC, EVP_PKEY_PUBLIC_KEY, NULL);
-            storeKeyInPEM(pairKey, PRIVKEYFILEC, EVP_PKEY_KEYPAIR, NULL);
-        }
-    }
+// Scansiona una singola subnet
+void scan_single_subnet(const char *single_subnet, EVP_PKEY *pairKey, int *total_discoveries) {
+    if(isVerbose) fprintf(stdout, "Scansione subnet %s...\n", single_subnet);
     
     // Costruisce subnet completa
     char full_subnet[64];
-    snprintf(full_subnet, sizeof(full_subnet), "%s.0", subnet);
+    snprintf(full_subnet, sizeof(full_subnet), "%s.0", single_subnet);
     
     struct in_addr subnet_addr, mask_addr;
     inet_pton(AF_INET, full_subnet, &subnet_addr);
@@ -321,12 +316,54 @@ void scan_network() {
         usleep(delayMs * 1000); // Delay in microseconds
     }
     
+    *total_discoveries += discoveries;
+    if(isVerbose) fprintf(stdout, "Subnet %s: %d host scoperti\n", single_subnet, discoveries);
+}
+
+// Scansiona tutte le subnet configurate
+void scan_network() {
+    if(isVerbose) fprintf(stdout, "Scansione reti: %s\n", subnet);
+    
+    EVP_PKEY *pairKey = NULL;
+    if(isRSA) {
+        initSecureTempFiles();
+        pairKey = generateRsaKeyPair(KEY_SIZE);
+        if(pairKey) {
+            storeKeyInPEM(pairKey, PUBKEYFILEC, EVP_PKEY_PUBLIC_KEY, NULL);
+            storeKeyInPEM(pairKey, PRIVKEYFILEC, EVP_PKEY_KEYPAIR, NULL);
+        }
+    }
+    
+    int total_discoveries = 0;
+    
+    // Copia la stringa subnet per tokenizzazione
+    char subnet_copy[256];
+    strncpy(subnet_copy, subnet, sizeof(subnet_copy) - 1);
+    subnet_copy[sizeof(subnet_copy) - 1] = '\0';
+    
+    // Tokenizza per virgole e spazi
+    char *token = strtok(subnet_copy, ",; ");
+    while (token != NULL) {
+        // Rimuovi spazi iniziali e finali
+        while (*token == ' ') token++;
+        char *end = token + strlen(token) - 1;
+        while (end > token && *end == ' ') {
+            *end = '\0';
+            end--;
+        }
+        
+        if (strlen(token) > 0) {
+            scan_single_subnet(token, pairKey, &total_discoveries);
+        }
+        token = strtok(NULL, ",; ");
+    }
+    
     if(isRSA && pairKey) {
         EVP_PKEY_free(pairKey);
         cleanupSecureTempFiles();
     }
     
-    if(isVerbose) fprintf(stdout, "Scansione completata: %d host scoperti\n", discoveries);
+    if(isVerbose) fprintf(stdout, "Scansione completata: %d host totali scoperti\n", total_discoveries);
 }
 
 // Diventa daemon

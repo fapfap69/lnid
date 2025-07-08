@@ -34,7 +34,8 @@ fi
 echo "Creazione file di configurazione..."
 cat > "$CONFIG_FILE" <<EOL
 # LNID Resolver Configuration
-# Subnet da scansionare (senza .0 finale)
+# Subnet da scansionare (senza .0 finale, separate da virgola)
+# Esempi: SUBNET=192.168.1 oppure SUBNET=192.168.1,10.0.1,172.16.1
 SUBNET=192.168.1
 
 # Intervallo scansione in secondi (minimo 60)
